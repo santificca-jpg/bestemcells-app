@@ -2,6 +2,8 @@ import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import Sidebar from '@/components/Sidebar'
 
+const ADMIN_EMAILS = ['santificca@hotmail.com']
+
 export default async function DashboardLayout({
   children,
 }: {
@@ -12,15 +14,32 @@ export default async function DashboardLayout({
 
   if (!user) redirect('/auth/login')
 
-  const { data: profile } = await supabase
+  let { data: profile } = await supabase
     .from('profiles')
     .select('*')
     .eq('id', user.id)
     .single()
 
+  // Auto-create profile on first login
   if (!profile) {
-    await supabase.auth.signOut()
-    redirect('/auth/login')
+    const role = ADMIN_EMAILS.includes(user.email ?? '') ? 'admin' : 'doctor'
+    const { data: newProfile } = await supabase
+      .from('profiles')
+      .insert({
+        id: user.id,
+        email: user.email!,
+        full_name: user.user_metadata?.full_name ?? '',
+        role,
+      })
+      .select()
+      .single()
+
+    if (!newProfile) {
+      await supabase.auth.signOut()
+      redirect('/auth/login')
+    }
+
+    profile = newProfile
   }
 
   // If admin, redirect to admin dashboard
