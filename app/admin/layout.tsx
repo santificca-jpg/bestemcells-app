@@ -18,7 +18,11 @@ export default async function AdminLayout({
     .eq('id', user.id)
     .single()
 
-  if (!profile || profile.role !== 'admin') redirect('/dashboard')
+  if (!profile) {
+    await supabase.auth.signOut()
+    redirect('/auth/login')
+  }
+  if (profile.role !== 'admin') redirect('/dashboard')
 
   return (
     <div className="flex min-h-screen">

@@ -18,7 +18,10 @@ export default async function DashboardLayout({
     .eq('id', user.id)
     .single()
 
-  if (!profile) redirect('/auth/login')
+  if (!profile) {
+    await supabase.auth.signOut()
+    redirect('/auth/login')
+  }
 
   // If admin, redirect to admin dashboard
   if (profile.role === 'admin') redirect('/admin')
