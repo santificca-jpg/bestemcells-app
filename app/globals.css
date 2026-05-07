@@ -1,0 +1,18 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --c-lon: #0f3460;
+  --c-dol: #e74c3c;
+  --c-sue: #1a9e5c;
+  --c-est: #2980b9;
+  --c-nut: #e67e22;
+  --c-kin: #8e44ad;
+  --c-ete: #c0392b;
+}
+
+body {
+  background: #f0f2f5;
+  color: #1a1a2e;
+}
