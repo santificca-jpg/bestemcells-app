@@ -1,26 +1,26 @@
-"use client";
-
-import {
-  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
-  PieChart, Pie, Cell, Legend,
-} from "recharts";
+import { getDashboardData } from "@/lib/era/dashboard-data";
 import KpiCard from "@/components/era/KpiCard";
-import {
-  KPI_SEMANA,
-  DISTRIBUCION_VERTICALES,
-  TURNOS_POR_DIA,
-  CITAS_SEMANA,
-} from "@/lib/era/mock-data";
 import { VERTICAL_META } from "@/lib/era/verticals";
 import VerticalBadge from "@/components/era/VerticalBadge";
+import DashboardCharts from "@/components/era/DashboardCharts";
+import type { Vertical } from "@/lib/era/types";
 
-const vs = KPI_SEMANA.vs_semana_anterior;
+export const revalidate = 300; // refrescar datos cada 5 minutos
 
-const PROXIMAS = CITAS_SEMANA.filter(
-  (c) => c.fecha_hora >= "2026-04-15T00:00"
-).slice(0, 8);
+export default async function EraOverview() {
+  const data = await getDashboardData();
 
-export default function EraOverview() {
+  if (!data) {
+    return (
+      <div className="p-6 text-center text-red-500 font-semibold">
+        No se pudieron cargar los datos. Verificá la conexión con Supabase.
+      </div>
+    );
+  }
+
+  const { kpi, distribucion, turnos_por_dia, proximas, semana_label, total_profesionales } = data;
+  const vs = kpi.vs_semana_anterior;
+
   return (
     <div className="p-6 space-y-6">
       {/* Header */}
@@ -30,58 +30,60 @@ export default function EraOverview() {
       >
         <div>
           <h1 className="text-xl font-black">Dashboard ERA Longevity</h1>
-          <p className="text-white/60 text-sm mt-0.5">Semana 13–17 Abril 2026 · 11 profesionales</p>
+          <p className="text-white/60 text-sm mt-0.5">
+            {semana_label} · {total_profesionales} profesionales
+          </p>
         </div>
         <div className="bg-white/15 border border-white/30 rounded-full px-4 py-2 text-sm font-semibold">
-          Semana 2 · Abril 2026
+          {semana_label}
         </div>
       </div>
 
       {/* KPIs */}
       <section>
-        <h2 className="text-xs font-bold text-navy-900 uppercase tracking-wide border-l-4 border-navy-700 pl-3 mb-3" style={{ borderColor: "#0f3460", color: "#1a1a2e" }}>
+        <h2 className="text-xs font-bold uppercase tracking-wide border-l-4 pl-3 mb-3" style={{ borderColor: "#0f3460", color: "#1a1a2e" }}>
           Resumen de la semana
         </h2>
         <div className="grid grid-cols-6 gap-3">
           <KpiCard
-            valor={KPI_SEMANA.visitas_unicas}
+            valor={kpi.visitas_unicas}
             label="Visitas únicas"
             sub={`vs ${vs.visitas_unicas} sem. ant.`}
-            delta={KPI_SEMANA.visitas_unicas - vs.visitas_unicas}
+            delta={kpi.visitas_unicas - vs.visitas_unicas}
             color="#0f3460"
           />
           <KpiCard
-            valor={`${KPI_SEMANA.tasa_asistencia}%`}
+            valor={`${kpi.tasa_asistencia}%`}
             label="Tasa asistencia"
             sub={`${vs.tasa_asistencia}% sem. ant.`}
-            delta={parseFloat((KPI_SEMANA.tasa_asistencia - vs.tasa_asistencia).toFixed(1))}
+            delta={parseFloat((kpi.tasa_asistencia - vs.tasa_asistencia).toFixed(1))}
             color="#27ae60"
           />
           <KpiCard
-            valor={`${KPI_SEMANA.primera_vez} 🆕`}
+            valor={`${kpi.primera_vez} 🆕`}
             label="Primera vez"
             sub={`vs ${vs.primera_vez} sem. ant.`}
-            delta={KPI_SEMANA.primera_vez - vs.primera_vez}
+            delta={kpi.primera_vez - vs.primera_vez}
             color="#1967d2"
           />
           <KpiCard
-            valor={`${KPI_SEMANA.vip} 🧬`}
+            valor={`${kpi.vip} 🧬`}
             label="Pacientes VIP"
             sub={`vs ${vs.vip} sem. ant.`}
-            delta={KPI_SEMANA.vip - vs.vip}
+            delta={kpi.vip - vs.vip}
             color="#f39c12"
           />
           <KpiCard
-            valor={KPI_SEMANA.canceladas}
+            valor={kpi.canceladas}
             label="Cancelados"
             sub={`vs ${vs.canceladas} sem. ant.`}
-            delta={-(KPI_SEMANA.canceladas - vs.canceladas)}
+            delta={-(kpi.canceladas - vs.canceladas)}
             color="#e74c3c"
           />
           <KpiCard
-            valor={`${KPI_SEMANA.tasa_pv}%`}
+            valor={`${kpi.tasa_pv}%`}
             label="% Primera vez"
-            sub={`${KPI_SEMANA.primera_vez} PV / ${KPI_SEMANA.visitas_unicas} visitas`}
+            sub={`${kpi.primera_vez} PV / ${kpi.visitas_unicas} visitas`}
             color="#7c3aed"
           />
         </div>
@@ -92,9 +94,9 @@ export default function EraOverview() {
         <h2 className="text-xs font-bold uppercase tracking-wide border-l-4 pl-3 mb-3" style={{ borderColor: "#0f3460", color: "#1a1a2e" }}>
           Distribución por vertical
         </h2>
-        <div className="grid grid-cols-7 gap-2">
-          {DISTRIBUCION_VERTICALES.map(({ vertical, cantidad, porcentaje }) => {
-            const meta = VERTICAL_META[vertical];
+        <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${distribucion.length}, 1fr)` }}>
+          {distribucion.map(({ vertical, cantidad, porcentaje }) => {
+            const meta = VERTICAL_META[vertical] ?? VERTICAL_META["longevidad"];
             return (
               <div
                 key={vertical}
@@ -116,62 +118,23 @@ export default function EraOverview() {
         </div>
       </section>
 
-      {/* Gráficos */}
-      <div className="grid grid-cols-3 gap-4">
-        {/* Turnos por día */}
-        <div className="col-span-2 bg-white rounded-xl p-4 shadow-sm">
-          <div className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-3">
-            📅 Turnos por día
-          </div>
-          <ResponsiveContainer width="100%" height={180}>
-            <BarChart data={TURNOS_POR_DIA}>
-              <XAxis dataKey="dia" tick={{ fontSize: 12 }} />
-              <YAxis tick={{ fontSize: 12 }} />
-              <Tooltip formatter={(v) => [`${v} turnos`]} />
-              <Bar dataKey="cantidad" fill="#0f3460" radius={[4, 4, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
+      {/* Gráficos (cliente) */}
+      <DashboardCharts turnos_por_dia={turnos_por_dia} distribucion={distribucion} />
 
-        {/* Donut verticales */}
-        <div className="bg-white rounded-xl p-4 shadow-sm">
-          <div className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-3">
-            🏷 Verticales
-          </div>
-          <ResponsiveContainer width="100%" height={180}>
-            <PieChart>
-              <Pie
-                data={DISTRIBUCION_VERTICALES}
-                dataKey="cantidad"
-                nameKey="vertical"
-                cx="50%"
-                cy="50%"
-                innerRadius={45}
-                outerRadius={70}
-              >
-                {DISTRIBUCION_VERTICALES.map(({ vertical }) => (
-                  <Cell key={vertical} fill={VERTICAL_META[vertical].color} />
-                ))}
-              </Pie>
-              <Tooltip
-                formatter={(v, name) => [`${v} turnos`, VERTICAL_META[name as keyof typeof VERTICAL_META]?.label ?? name]}
-              />
-            </PieChart>
-          </ResponsiveContainer>
-        </div>
-      </div>
-
-      {/* Próximas citas */}
+      {/* Primeras citas de la semana */}
       <section>
         <h2 className="text-xs font-bold uppercase tracking-wide border-l-4 pl-3 mb-3" style={{ borderColor: "#0f3460", color: "#1a1a2e" }}>
-          Próximas citas (Mié–Vie)
+          Primeras citas de la semana
         </h2>
         <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-          {PROXIMAS.map((c) => {
-            const meta = VERTICAL_META[c.vertical];
-            const hora = c.fecha_hora.split("T")[1];
-            const dia = c.fecha_hora.split("T")[0].split("-")[2];
-            const mes = c.fecha_hora.split("T")[0].split("-")[1];
+          {proximas.length === 0 ? (
+            <div className="px-4 py-6 text-sm text-gray-400 text-center">Sin citas registradas</div>
+          ) : proximas.map((c) => {
+            const meta = VERTICAL_META[c.vertical] ?? VERTICAL_META["longevidad"];
+            const dt = new Date(c.fecha_hora);
+            const hora = `${String(dt.getUTCHours()).padStart(2, "0")}:${String(dt.getUTCMinutes()).padStart(2, "0")}`;
+            const dia = String(dt.getUTCDate()).padStart(2, "0");
+            const mes = String(dt.getUTCMonth() + 1).padStart(2, "0");
             return (
               <div
                 key={c.id}
@@ -193,7 +156,7 @@ export default function EraOverview() {
                   {c.es_primera_vez && (
                     <span className="text-xs font-bold px-1.5 py-0.5 rounded bg-blue-100 text-blue-700">PV</span>
                   )}
-                  <VerticalBadge vertical={c.vertical} />
+                  <VerticalBadge vertical={c.vertical as Vertical} />
                 </div>
               </div>
             );
@@ -204,21 +167,21 @@ export default function EraOverview() {
       {/* Comparativo */}
       <section>
         <h2 className="text-xs font-bold uppercase tracking-wide border-l-4 pl-3 mb-3" style={{ borderColor: "#0f3460", color: "#1a1a2e" }}>
-          Comparativo Semana 1 vs Semana 2
+          Comparativo semana actual vs anterior
         </h2>
         <div className="bg-white rounded-xl shadow-sm p-4">
           <div className="grid grid-cols-4 gap-4 pb-2 mb-2 border-b-2 border-gray-200 text-xs font-bold text-gray-400 uppercase">
             <span>Métrica</span>
-            <span className="text-center">Sem 1</span>
-            <span className="text-center">Sem 2</span>
+            <span className="text-center">Sem. anterior</span>
+            <span className="text-center">Sem. actual</span>
             <span className="text-right">Δ</span>
           </div>
           {[
-            { label: "Visitas únicas", s1: vs.visitas_unicas, s2: KPI_SEMANA.visitas_unicas, pos: false },
-            { label: "Tasa asistencia", s1: `${vs.tasa_asistencia}%`, s2: `${KPI_SEMANA.tasa_asistencia}%`, delta: KPI_SEMANA.tasa_asistencia - vs.tasa_asistencia, pos: true },
-            { label: "Primera vez", s1: vs.primera_vez, s2: KPI_SEMANA.primera_vez, pos: true },
-            { label: "VIP", s1: vs.vip, s2: KPI_SEMANA.vip, pos: true },
-            { label: "Cancelados", s1: vs.canceladas, s2: KPI_SEMANA.canceladas, pos: false },
+            { label: "Visitas únicas", s1: vs.visitas_unicas, s2: kpi.visitas_unicas, pos: true },
+            { label: "Tasa asistencia", s1: `${vs.tasa_asistencia}%`, s2: `${kpi.tasa_asistencia}%`, pos: true },
+            { label: "Primera vez", s1: vs.primera_vez, s2: kpi.primera_vez, pos: true },
+            { label: "VIP", s1: vs.vip, s2: kpi.vip, pos: true },
+            { label: "Cancelados", s1: vs.canceladas, s2: kpi.canceladas, pos: false },
           ].map(({ label, s1, s2, pos }) => {
             const n1 = typeof s1 === "string" ? parseFloat(s1) : s1;
             const n2 = typeof s2 === "string" ? parseFloat(s2) : s2;
@@ -230,7 +193,7 @@ export default function EraOverview() {
                 <span className="text-center font-semibold">{s1}</span>
                 <span className="text-center font-semibold">{s2}</span>
                 <span className={`text-right text-xs font-bold ${diff === 0 ? "text-gray-400" : good ? "text-green-600" : "text-red-500"}`}>
-                  {diff > 0 ? `▲ +${diff.toFixed(1).replace(".0","")}` : diff < 0 ? `▼ ${diff.toFixed(1).replace(".0","")}` : "—"}
+                  {diff > 0 ? `▲ +${diff.toFixed(1).replace(".0", "")}` : diff < 0 ? `▼ ${diff.toFixed(1).replace(".0", "")}` : "—"}
                 </span>
               </div>
             );
