@@ -1,16 +1,15 @@
-"use client";
-
-import { use } from "react";
 import Link from "next/link";
-import { PERFORMANCE_PROFESIONALES, CITAS_SEMANA } from "@/lib/era/mock-data";
+import { getProfesionalDetail } from "@/lib/era/dashboard-data";
 import { VERTICAL_META } from "@/lib/era/verticals";
 import type { Vertical } from "@/lib/era/types";
 
-export default function DrilldownProfesional({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = use(params);
-  const perf = PERFORMANCE_PROFESIONALES.find((p) => p.profesional.id === id);
+export const revalidate = 300;
 
-  if (!perf) {
+export default async function DrilldownProfesional({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  const detail = await getProfesionalDetail(id);
+
+  if (!detail) {
     return (
       <div className="p-6">
         <Link href="/era/profesionales" className="text-blue-600 text-sm hover:underline">← Volver</Link>
@@ -19,9 +18,7 @@ export default function DrilldownProfesional({ params }: { params: Promise<{ id:
     );
   }
 
-  const citas = CITAS_SEMANA
-    .filter((c) => c.profesional.id === id)
-    .sort((a, b) => a.fecha_hora.localeCompare(b.fecha_hora));
+  const { perf, citas, semana_label } = detail;
 
   const porVertical = Object.entries(
     citas.reduce((acc, c) => {
@@ -36,13 +33,13 @@ export default function DrilldownProfesional({ params }: { params: Promise<{ id:
 
       {/* Header */}
       <div className="bg-white rounded-xl p-5 shadow-sm border-l-4" style={{ borderColor: "#0f3460" }}>
-        <h1 className="text-xl font-black text-gray-800">{perf.profesional.nombre}</h1>
-        <p className="text-sm text-gray-500 mt-0.5">{perf.profesional.especialidad}</p>
-        <div className="grid grid-cols-6 gap-3 mt-4">
+        <h1 className="text-xl font-black text-gray-800">{perf.nombre}</h1>
+        <p className="text-sm text-gray-500 mt-0.5">{perf.especialidad}</p>
+        <p className="text-xs text-gray-400 mt-0.5">Semana {semana_label}</p>
+        <div className="grid grid-cols-5 gap-3 mt-4">
           {[
             { label: "Turnos", valor: perf.turnos },
             { label: "Asistencia", valor: `${perf.tasa_asistencia}%` },
-            { label: "Ocupación", valor: `${perf.tasa_ocupacion}%` },
             { label: "Primera vez", valor: perf.primera_vez },
             { label: "VIP", valor: perf.vip > 0 ? `${perf.vip} 🧬` : "—" },
             { label: "Cancelados", valor: perf.cancelados + perf.no_shows || "—" },
@@ -61,6 +58,7 @@ export default function DrilldownProfesional({ params }: { params: Promise<{ id:
         <div className="flex gap-2 flex-wrap">
           {porVertical.map(([v, n]) => {
             const meta = VERTICAL_META[v as Vertical];
+            if (!meta) return null;
             return (
               <div key={v} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-semibold" style={{ background: meta.bg, color: meta.color }}>
                 {meta.emoji} {meta.label} <span className="font-black">({n})</span>
@@ -77,8 +75,8 @@ export default function DrilldownProfesional({ params }: { params: Promise<{ id:
         </div>
         {citas.map((c) => {
           const meta = VERTICAL_META[c.vertical];
-          const [fecha, hora] = c.fecha_hora.split("T");
-          const [, mes, dia] = fecha.split("-");
+          const [, mes, dia] = c.fecha_hora.substring(0, 10).split("-");
+          const hora = c.fecha_hora.substring(11, 16);
           return (
             <div
               key={c.id}
@@ -98,7 +96,7 @@ export default function DrilldownProfesional({ params }: { params: Promise<{ id:
                   <span className="text-xs font-bold px-1.5 py-0.5 rounded bg-blue-100 text-blue-700">PV</span>
                 )}
                 <span className="text-xs font-bold px-1.5 py-0.5 rounded text-white" style={{ background: meta.color, fontSize: "0.6rem" }}>
-                  {meta.label.toUpperCase().slice(0,6)}
+                  {meta.label.toUpperCase().slice(0, 6)}
                 </span>
               </div>
             </div>

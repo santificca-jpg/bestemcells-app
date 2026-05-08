@@ -246,3 +246,380 @@ export async function getDashboardData(): Promise<DashboardData | null> {
     proximas,
   };
 }
+
+// ─── AGENDA ──────────────────────────────────────────────────────────────────
+
+export type AgendaCita = {
+  id: string;
+  fecha_hora: string;
+  paciente: { nombre_completo: string; es_vip: boolean };
+  profesional: { nombre: string };
+  servicio: string;
+  vertical: Vertical;
+  es_primera_vez: boolean;
+};
+
+export type AgendaData = {
+  semana_label: string;
+  dias: { label: string; fecha: string }[];
+  profesionales: string[];
+  citas: AgendaCita[];
+};
+
+export async function getAgendaData(): Promise<AgendaData | null> {
+  const supabase = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  );
+
+  const { data: latest } = await supabase
+    .from("era_appointments")
+    .select("fecha_hora")
+    .order("fecha_hora", { ascending: false })
+    .limit(1)
+    .single();
+
+  if (!latest) return null;
+
+  const monday = getMonday(new Date(latest.fecha_hora));
+  const friday = addDays(monday, 4);
+  friday.setHours(23, 59, 59, 999);
+
+  const { data: rows, error } = await supabase
+    .from("era_appointments")
+    .select(`
+      id, paciente_id, fecha_hora, estado, vertical_calculada, es_primera_vez,
+      era_professionals!profesional_id(nombre),
+      era_patients!paciente_id(nombre_completo, es_vip),
+      era_services!servicio_id(nombre)
+    `)
+    .gte("fecha_hora", monday.toISOString())
+    .lte("fecha_hora", friday.toISOString())
+    .order("fecha_hora");
+
+  if (error || !rows) return null;
+
+  const semanaLabel = `${monday.getDate()}–${friday.getDate()} ${MESES[monday.getMonth()]} ${monday.getFullYear()}`;
+
+  const DIAS_LABEL = ["Lun", "Mar", "Mié", "Jue", "Vie"];
+  const dias = DIAS_LABEL.map((label, i) => {
+    const d = addDays(monday, i);
+    const dia = String(d.getDate()).padStart(2, "0");
+    const mes = String(d.getMonth() + 1).padStart(2, "0");
+    return {
+      label: `${label} ${d.getDate()}/${d.getMonth() + 1}`,
+      fecha: `${d.getFullYear()}-${mes}-${dia}`,
+    };
+  });
+
+  const citas: AgendaCita[] = (rows as any[]).map((r) => {
+    const nombreRaw = r.era_patients?.nombre_completo ?? "Paciente";
+    const esVipEmoji = nombreRaw.includes("🧬");
+    const nombreLimpio = nombreRaw.replace(/🧬\s*/g, "").trim();
+    const vertical = toVertical(r.vertical_calculada);
+    return {
+      id: r.id,
+      fecha_hora: r.fecha_hora,
+      paciente: {
+        nombre_completo: nombreLimpio,
+        es_vip: (r.era_patients?.es_vip ?? false) || esVipEmoji,
+      },
+      profesional: { nombre: r.era_professionals?.nombre ?? "" },
+      servicio: r.era_services?.nombre ?? SERVICIO_LABEL[vertical],
+      vertical,
+      es_primera_vez: r.es_primera_vez ?? false,
+    };
+  });
+
+  const profesionales = [
+    ...new Set(citas.map((c) => c.profesional.nombre).filter(Boolean)),
+  ].sort();
+
+  return { semana_label: semanaLabel, dias, profesionales, citas };
+}
+
+// ─── PROFESIONALES ───────────────────────────────────────────────────────────
+
+export type ProfesionalPerf = {
+  id: string;
+  nombre: string;
+  especialidad: string;
+  turnos: number;
+  asistidos: number;
+  cancelados: number;
+  no_shows: number;
+  primera_vez: number;
+  vip: number;
+  tasa_asistencia: number;
+};
+
+export type ProfesionalesData = {
+  semana_label: string;
+  profesionales: ProfesionalPerf[];
+};
+
+export async function getProfesionalesData(): Promise<ProfesionalesData | null> {
+  const supabase = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  );
+
+  const { data: latest } = await supabase
+    .from("era_appointments")
+    .select("fecha_hora")
+    .order("fecha_hora", { ascending: false })
+    .limit(1)
+    .single();
+
+  if (!latest) return null;
+
+  const monday = getMonday(new Date(latest.fecha_hora));
+  const friday = addDays(monday, 4);
+  friday.setHours(23, 59, 59, 999);
+
+  const { data: rows, error } = await supabase
+    .from("era_appointments")
+    .select(`
+      profesional_id, paciente_id, estado, es_primera_vez,
+      era_professionals!profesional_id(id, nombre, especialidad),
+      era_patients!paciente_id(es_vip)
+    `)
+    .gte("fecha_hora", monday.toISOString())
+    .lte("fecha_hora", friday.toISOString());
+
+  if (error || !rows) return null;
+
+  const semanaLabel = `${monday.getDate()}–${friday.getDate()} ${MESES[monday.getMonth()]} ${monday.getFullYear()}`;
+
+  type Entry = {
+    prof: { id: string; nombre: string; especialidad: string };
+    turnos: number; asistidos: number; cancelados: number; no_shows: number;
+    primera_vez: number; vip_ids: Set<string>;
+  };
+  const byProf = new Map<string, Entry>();
+
+  for (const r of rows as any[]) {
+    const profId = r.profesional_id as string;
+    if (!profId || !r.era_professionals) continue;
+
+    if (!byProf.has(profId)) {
+      byProf.set(profId, {
+        prof: {
+          id: r.era_professionals.id ?? profId,
+          nombre: r.era_professionals.nombre ?? "",
+          especialidad: r.era_professionals.especialidad ?? "",
+        },
+        turnos: 0, asistidos: 0, cancelados: 0, no_shows: 0,
+        primera_vez: 0, vip_ids: new Set(),
+      });
+    }
+
+    const e = byProf.get(profId)!;
+    e.turnos++;
+    if (r.estado === "asistio") e.asistidos++;
+    else if (r.estado === "cancelada") e.cancelados++;
+    else if (r.estado === "no-show") e.no_shows++;
+    if (r.es_primera_vez) e.primera_vez++;
+    if (r.era_patients?.es_vip && r.paciente_id) e.vip_ids.add(r.paciente_id as string);
+  }
+
+  const profesionales: ProfesionalPerf[] = [...byProf.values()]
+    .map(({ prof, turnos, asistidos, cancelados, no_shows, primera_vez, vip_ids }) => ({
+      id: prof.id,
+      nombre: prof.nombre,
+      especialidad: prof.especialidad,
+      turnos,
+      asistidos,
+      cancelados,
+      no_shows,
+      primera_vez,
+      vip: vip_ids.size,
+      tasa_asistencia: turnos > 0 ? Math.round((asistidos / turnos) * 1000) / 10 : 0,
+    }))
+    .sort((a, b) => b.turnos - a.turnos);
+
+  return { semana_label: semanaLabel, profesionales };
+}
+
+// ─── PROFESIONAL DETAIL ──────────────────────────────────────────────────────
+
+export type ProfesionalDetail = {
+  semana_label: string;
+  perf: ProfesionalPerf;
+  citas: AgendaCita[];
+};
+
+export async function getProfesionalDetail(id: string): Promise<ProfesionalDetail | null> {
+  const supabase = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  );
+
+  const { data: latest } = await supabase
+    .from("era_appointments")
+    .select("fecha_hora")
+    .order("fecha_hora", { ascending: false })
+    .limit(1)
+    .single();
+
+  if (!latest) return null;
+
+  const monday = getMonday(new Date(latest.fecha_hora));
+  const friday = addDays(monday, 4);
+  friday.setHours(23, 59, 59, 999);
+
+  const [{ data: profData }, { data: rows, error }] = await Promise.all([
+    supabase
+      .from("era_professionals")
+      .select("id, nombre, especialidad")
+      .eq("id", id)
+      .single(),
+    supabase
+      .from("era_appointments")
+      .select(`
+        id, paciente_id, fecha_hora, estado, vertical_calculada, es_primera_vez,
+        era_patients!paciente_id(nombre_completo, es_vip),
+        era_services!servicio_id(nombre)
+      `)
+      .eq("profesional_id", id)
+      .gte("fecha_hora", monday.toISOString())
+      .lte("fecha_hora", friday.toISOString())
+      .order("fecha_hora"),
+  ]);
+
+  if (!profData || error || !rows) return null;
+
+  const semanaLabel = `${monday.getDate()}–${friday.getDate()} ${MESES[monday.getMonth()]} ${monday.getFullYear()}`;
+
+  let turnos = 0, asistidos = 0, cancelados = 0, no_shows = 0, primera_vez = 0;
+  const vip_ids = new Set<string>();
+
+  const citas: AgendaCita[] = (rows as any[]).map((r) => {
+    const nombreRaw = r.era_patients?.nombre_completo ?? "Paciente";
+    const esVipEmoji = nombreRaw.includes("🧬");
+    const nombreLimpio = nombreRaw.replace(/🧬\s*/g, "").trim();
+    const vertical = toVertical(r.vertical_calculada);
+
+    turnos++;
+    if (r.estado === "asistio") asistidos++;
+    else if (r.estado === "cancelada") cancelados++;
+    else if (r.estado === "no-show") no_shows++;
+    if (r.es_primera_vez) primera_vez++;
+    if ((r.era_patients?.es_vip || esVipEmoji) && r.paciente_id) vip_ids.add(r.paciente_id);
+
+    return {
+      id: r.id,
+      fecha_hora: r.fecha_hora,
+      paciente: {
+        nombre_completo: nombreLimpio,
+        es_vip: (r.era_patients?.es_vip ?? false) || esVipEmoji,
+      },
+      profesional: { nombre: profData.nombre },
+      servicio: r.era_services?.nombre ?? SERVICIO_LABEL[vertical],
+      vertical,
+      es_primera_vez: r.es_primera_vez ?? false,
+    };
+  });
+
+  return {
+    semana_label: semanaLabel,
+    perf: {
+      id: profData.id,
+      nombre: profData.nombre,
+      especialidad: profData.especialidad ?? "",
+      turnos, asistidos, cancelados, no_shows, primera_vez,
+      vip: vip_ids.size,
+      tasa_asistencia: turnos > 0 ? Math.round((asistidos / turnos) * 1000) / 10 : 0,
+    },
+    citas,
+  };
+}
+
+// ─── EMBUDOS ─────────────────────────────────────────────────────────────────
+
+export type EmbudoHorario = {
+  hora: string;
+  lunes: number;
+  martes: number;
+  miercoles: number;
+  jueves: number;
+  viernes: number;
+  total: number;
+};
+
+export type EmbudosData = {
+  semana_label: string;
+  embudos: EmbudoHorario[];
+};
+
+export async function getEmbudosData(): Promise<EmbudosData | null> {
+  const supabase = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  );
+
+  const { data: latest } = await supabase
+    .from("era_appointments")
+    .select("fecha_hora")
+    .order("fecha_hora", { ascending: false })
+    .limit(1)
+    .single();
+
+  if (!latest) return null;
+
+  const monday = getMonday(new Date(latest.fecha_hora));
+  const friday = addDays(monday, 4);
+  friday.setHours(23, 59, 59, 999);
+
+  const { data: rows, error } = await supabase
+    .from("era_appointments")
+    .select("fecha_hora, estado")
+    .gte("fecha_hora", monday.toISOString())
+    .lte("fecha_hora", friday.toISOString());
+
+  if (error || !rows) return null;
+
+  const semanaLabel = `${monday.getDate()}–${friday.getDate()} ${MESES[monday.getMonth()]} ${monday.getFullYear()}`;
+
+  type Slot = { lunes: number; martes: number; miercoles: number; jueves: number; viernes: number };
+  const slotMap = new Map<string, Slot>();
+
+  for (const r of rows as { fecha_hora: string; estado: string }[]) {
+    if (r.estado === "cancelada") continue;
+    const h = parseInt(r.fecha_hora.substring(11, 13));
+    const m = parseInt(r.fecha_hora.substring(14, 16));
+    const hora = `${String(h).padStart(2, "0")}:${m < 30 ? "00" : "30"}`;
+
+    const dateStr = r.fecha_hora.substring(0, 10);
+    const dow = new Date(dateStr + "T12:00:00Z").getUTCDay();
+    if (dow < 1 || dow > 5) continue;
+
+    if (!slotMap.has(hora)) {
+      slotMap.set(hora, { lunes: 0, martes: 0, miercoles: 0, jueves: 0, viernes: 0 });
+    }
+    const keys = ["lunes", "martes", "miercoles", "jueves", "viernes"] as const;
+    slotMap.get(hora)![keys[dow - 1]]++;
+  }
+
+  if (slotMap.size === 0) return { semana_label: semanaLabel, embudos: [] };
+
+  const sortedHoras = [...slotMap.keys()].sort();
+  const allHoras: string[] = [];
+  let curH = parseInt(sortedHoras[0].substring(0, 2));
+  let curM = parseInt(sortedHoras[0].substring(3, 5));
+  const endH = parseInt(sortedHoras[sortedHoras.length - 1].substring(0, 2));
+  const endM = parseInt(sortedHoras[sortedHoras.length - 1].substring(3, 5));
+
+  while (curH < endH || (curH === endH && curM <= endM)) {
+    allHoras.push(`${String(curH).padStart(2, "0")}:${curM === 0 ? "00" : "30"}`);
+    if (curM === 0) curM = 30;
+    else { curM = 0; curH++; }
+  }
+
+  const embudos: EmbudoHorario[] = allHoras.map((hora) => {
+    const s = slotMap.get(hora) ?? { lunes: 0, martes: 0, miercoles: 0, jueves: 0, viernes: 0 };
+    return { hora, ...s, total: s.lunes + s.martes + s.miercoles + s.jueves + s.viernes };
+  });
+
+  return { semana_label: semanaLabel, embudos };
+}

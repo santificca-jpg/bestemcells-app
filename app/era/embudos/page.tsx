@@ -1,13 +1,13 @@
-"use client";
+import { getEmbudosData } from "@/lib/era/dashboard-data";
+import type { EmbudoHorario } from "@/lib/era/dashboard-data";
 
-import { EMBUDOS_HORARIOS } from "@/lib/era/mock-data";
+export const revalidate = 300;
 
 const DIAS_COLS = ["lunes", "martes", "miercoles", "jueves", "viernes"] as const;
 const DIAS_LABEL = ["Lun", "Mar", "Mié", "Jue", "Vie"];
+const PICO_UMBRAL = 12;
 
-const maxTotal = Math.max(...EMBUDOS_HORARIOS.map((h) => h.total));
-
-function HeatCell({ value }: { value: number }) {
+function HeatCell({ value, maxTotal }: { value: number; maxTotal: number }) {
   const intensity = maxTotal > 0 ? value / maxTotal : 0;
   const bg = value === 0
     ? "#f9fafb"
@@ -25,23 +25,32 @@ function HeatCell({ value }: { value: number }) {
   );
 }
 
-const PICO_UMBRAL = 12;
+export default async function EmbudosPage() {
+  const data = await getEmbudosData();
 
-export default function EmbudosPage() {
-  const picos = EMBUDOS_HORARIOS.filter((h) => h.total >= PICO_UMBRAL);
+  if (!data) {
+    return (
+      <div className="p-6 text-center text-red-500 font-semibold">
+        No se pudieron cargar los datos. Verificá la conexión con Supabase.
+      </div>
+    );
+  }
+
+  const { embudos, semana_label } = data;
+  const maxTotal = Math.max(...embudos.map((h) => h.total), 1);
+  const picos = embudos.filter((h) => h.total >= PICO_UMBRAL);
 
   return (
     <div className="p-6 space-y-6">
       <div>
         <h1 className="text-lg font-black text-gray-800">Embudos horarios</h1>
-        <p className="text-xs text-gray-400 mt-0.5">Semana 13–17 Abril 2026 · Intensidad = cantidad de turnos simultáneos</p>
+        <p className="text-xs text-gray-400 mt-0.5">Semana {semana_label} · Intensidad = cantidad de turnos simultáneos</p>
       </div>
 
-      {/* Alertas de pico */}
       {picos.length > 0 && (
         <div className="space-y-2">
           <h2 className="text-xs font-bold text-gray-500 uppercase tracking-wide">Franjas con mayor demanda (&gt;= {PICO_UMBRAL} turnos)</h2>
-          {picos.map((h) => (
+          {picos.map((h: EmbudoHorario) => (
             <div key={h.hora} className="flex items-center gap-3 bg-red-50 border border-red-200 rounded-xl px-4 py-3">
               <span className="text-red-600 font-black text-lg w-14">{h.hora}</span>
               <div className="flex-1">
@@ -53,13 +62,11 @@ export default function EmbudosPage() {
                   }).filter(Boolean).join(" · ")}
                 </div>
               </div>
-              <div className="text-xs text-red-400 italic">Considerar pre-check {h.hora.replace(/:(\d+)/, (_, m) => `:${String(Math.max(0, parseInt(m) - 30)).padStart(2, "0")}`).replace("00:00","30")}</div>
             </div>
           ))}
         </div>
       )}
 
-      {/* Heatmap */}
       <div className="bg-white rounded-xl shadow-sm p-4 overflow-x-auto">
         <h2 className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-3">Mapa de calor — turnos por hora y día</h2>
         <table className="w-full border-separate border-spacing-0">
@@ -73,11 +80,11 @@ export default function EmbudosPage() {
             </tr>
           </thead>
           <tbody>
-            {EMBUDOS_HORARIOS.map((h) => (
+            {embudos.map((h: EmbudoHorario) => (
               <tr key={h.hora}>
                 <td className="text-xs font-bold text-gray-400 px-2 py-0">{h.hora}</td>
                 {DIAS_COLS.map((d) => (
-                  <HeatCell key={d} value={h[d]} />
+                  <HeatCell key={d} value={h[d]} maxTotal={maxTotal} />
                 ))}
                 <td className="p-0">
                   <div
@@ -96,7 +103,6 @@ export default function EmbudosPage() {
         </table>
       </div>
 
-      {/* Leyenda */}
       <div className="flex items-center gap-3 text-xs text-gray-400">
         <span>Menos turnos</span>
         {[0.1, 0.3, 0.5, 0.7, 0.9].map((i) => (
