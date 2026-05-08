@@ -44,7 +44,7 @@ export default async function EraOverview() {
         <h2 className="text-xs font-bold uppercase tracking-wide border-l-4 pl-3 mb-3" style={{ borderColor: "#0f3460", color: "#1a1a2e" }}>
           Resumen de la semana
         </h2>
-        <div className="grid grid-cols-6 gap-3">
+        <div className="grid grid-cols-7 gap-3">
           <KpiCard
             valor={kpi.visitas_unicas}
             label="Visitas únicas"
@@ -85,6 +85,12 @@ export default async function EraOverview() {
             label="% Primera vez"
             sub={`${kpi.primera_vez} PV / ${kpi.visitas_unicas} visitas`}
             color="#7c3aed"
+          />
+          <KpiCard
+            valor={`${kpi.tasa_recurrencia}%`}
+            label="Tasa recurrencia"
+            sub={`${kpi.recurrentes} de ${kpi.visitas_unicas} pacientes`}
+            color="#0891b2"
           />
         </div>
       </section>

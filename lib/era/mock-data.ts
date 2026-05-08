@@ -168,6 +168,8 @@ export const KPI_SEMANA: KpiSemana = {
   canceladas: 17,
   no_shows: 0,
   tasa_pv: 19.5,
+  tasa_recurrencia: 72.0,
+  recurrentes: 85,
   vs_semana_anterior: {
     visitas_unicas: 128,
     tasa_asistencia: 88.7,

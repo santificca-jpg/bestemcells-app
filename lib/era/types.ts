@@ -44,6 +44,8 @@ export interface KpiSemana {
   canceladas: number;
   no_shows: number;
   tasa_pv: number;
+  tasa_recurrencia: number;
+  recurrentes: number;
   vs_semana_anterior: {
     visitas_unicas: number;
     tasa_asistencia: number;

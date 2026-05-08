@@ -44,18 +44,25 @@ type RawAppt = {
   duracion_min: number;
   estado: string;
   vertical_calculada: string | null;
-  es_primera_vez: boolean;
   era_professionals: { nombre: string } | null;
-  era_patients: { nombre_completo: string; es_vip: boolean } | null;
+  era_patients: { nombre_completo: string; es_vip: boolean; primera_visita_fecha: string | null } | null;
 };
 
 type RawApptMin = {
   paciente_id: string;
+  fecha_hora: string;
   estado: string;
   vertical_calculada: string | null;
-  es_primera_vez: boolean;
-  era_patients: { es_vip: boolean } | null;
+  era_patients: { es_vip: boolean; nombre_completo: string; primera_visita_fecha: string | null } | null;
+  era_professionals: { nombre: string } | null;
 };
+
+const EXCLUIR_PV = ["camilli", "cornejo", "hiese"] as const;
+
+function esProfExcluido(nombre: string): boolean {
+  const lower = nombre.toLowerCase();
+  return EXCLUIR_PV.some((e) => lower.includes(e));
+}
 
 function computeKpis(rows: RawApptMin[]) {
   const total = rows.length;
@@ -63,13 +70,29 @@ function computeKpis(rows: RawApptMin[]) {
   const noShows = rows.filter((r) => r.estado === "no-show").length;
   const activos = rows.filter((r) => r.estado !== "cancelada" && r.estado !== "no-show");
 
-  const uniquePatients = new Set(activos.map((r) => r.paciente_id));
-  const vipPatients = new Set(
-    activos.filter((r) => r.era_patients?.es_vip).map((r) => r.paciente_id)
+  const visitasSet = new Set(
+    activos.map((r) => `${r.paciente_id}:${r.fecha_hora.substring(0, 10)}`)
   );
-  const primeraVez = activos.filter((r) => r.es_primera_vez).length;
+  const visitas = visitasSet.size;
 
-  const visitas = uniquePatients.size;
+  const vipPatients = new Set(
+    activos
+      .filter((r) => r.era_patients?.es_vip || r.era_patients?.nombre_completo?.includes("🧬"))
+      .map((r) => r.paciente_id)
+  );
+
+  const primeraVezPatients = new Set(
+    activos
+      .filter((r) => {
+        const apptDate = r.fecha_hora.substring(0, 10);
+        const pvFecha = r.era_patients?.primera_visita_fecha;
+        const profNombre = r.era_professionals?.nombre ?? "";
+        return pvFecha === apptDate && !esProfExcluido(profNombre);
+      })
+      .map((r) => r.paciente_id)
+  );
+  const primeraVez = primeraVezPatients.size;
+
   const denominador = total > 0 ? total : 1;
   const tasaAsistencia =
     Math.round(((total - canceladas - noShows) / denominador) * 1000) / 10;
@@ -142,9 +165,9 @@ export async function GET() {
   const { data: currentRows, error: currErr } = await supabase
     .from("era_appointments")
     .select(`
-      id, paciente_id, fecha_hora, duracion_min, estado, vertical_calculada, es_primera_vez,
+      id, paciente_id, fecha_hora, duracion_min, estado, vertical_calculada,
       era_professionals!profesional_id(nombre),
-      era_patients!paciente_id(nombre_completo, es_vip)
+      era_patients!paciente_id(nombre_completo, es_vip, primera_visita_fecha)
     `)
     .gte("fecha_hora", monday.toISOString())
     .lte("fecha_hora", friday.toISOString())
@@ -158,11 +181,20 @@ export async function GET() {
   const { data: prevRows } = await supabase
     .from("era_appointments")
     .select(`
-      paciente_id, fecha_hora, estado, vertical_calculada, es_primera_vez,
-      era_patients!paciente_id(es_vip)
+      paciente_id, fecha_hora, estado, vertical_calculada,
+      era_patients!paciente_id(es_vip, nombre_completo, primera_visita_fecha),
+      era_professionals!profesional_id(nombre)
     `)
     .gte("fecha_hora", prevMonday.toISOString())
     .lte("fecha_hora", prevFriday.toISOString());
+
+  // 4b. Pacientes activos en las 4 semanas previas (para tasa de recurrencia)
+  const fourWeeksAgo = addDays(monday, -28);
+  const { data: prior4Rows } = await supabase
+    .from("era_appointments")
+    .select("paciente_id, estado")
+    .gte("fecha_hora", fourWeeksAgo.toISOString())
+    .lt("fecha_hora", monday.toISOString());
 
   const rows = (currentRows || []) as unknown as RawAppt[];
   const prev = (prevRows || []) as unknown as RawApptMin[];
@@ -171,36 +203,53 @@ export async function GET() {
   const kpiCurrent = computeKpis(rows as unknown as RawApptMin[]);
   const kpiPrev = computeKpis(prev);
 
+  // 5b. Tasa de recurrencia
+  const prior4PatientIds = new Set(
+    (prior4Rows || [])
+      .filter((r: { estado: string }) => r.estado !== "cancelada" && r.estado !== "no-show")
+      .map((r: { paciente_id: string }) => r.paciente_id)
+  );
+  const activosCurrent = (rows as unknown as RawApptMin[]).filter(
+    (r) => r.estado !== "cancelada" && r.estado !== "no-show"
+  );
+  const uniquePatientsCurrent = new Set(activosCurrent.map((r) => r.paciente_id));
+  const recurrenteCount = [...uniquePatientsCurrent].filter((id) => prior4PatientIds.has(id)).length;
+  const tasaRecurrencia =
+    uniquePatientsCurrent.size > 0
+      ? Math.round((recurrenteCount / uniquePatientsCurrent.size) * 1000) / 10
+      : 0;
+
   // 6. Week label for header
   const semanaLabel = `${monday.getDate()}–${friday.getDate()} ${MESES[monday.getMonth()]} ${monday.getFullYear()}`;
 
   // 7. Upcoming / recent appointments (first 8 of the week)
   const proximas = rows.slice(0, 8).map((r) => {
     const nombreRaw = r.era_patients?.nombre_completo ?? "Paciente";
-    // DriCloud incluye 🧬 en el nombre para marcar pacientes VIP
     const esVipPorEmoji = nombreRaw.includes("🧬");
     const nombreLimpio = nombreRaw.replace(/🧬\s*/g, "").trim();
+    const profNombre = r.era_professionals?.nombre ?? "";
+    const apptDate = r.fecha_hora.substring(0, 10);
+    const esPrimeraVez =
+      r.era_patients?.primera_visita_fecha === apptDate && !esProfExcluido(profNombre);
     return {
-    id: r.id,
-    fecha_hora: r.fecha_hora,
-    paciente: {
-      nombre_completo: nombreLimpio,
-      es_vip: (r.era_patients?.es_vip ?? false) || esVipPorEmoji,
-    },
-    profesional: {
-      nombre: r.era_professionals?.nombre ?? "",
-    },
-    servicio: toVertical(r.vertical_calculada)
-      .replace("longevidad", "Longevidad")
-      .replace("dolor", "Dolor / Regenerativa")
-      .replace("sueroterapia", "Sueroterapia")
-      .replace("estudios", "Estudios diagnósticos")
-      .replace("nutricion", "Nutrición")
-      .replace("kinesiologia", "Kinesiología")
-      .replace("estetica", "Estética"),
-    vertical: toVertical(r.vertical_calculada),
-    es_primera_vez: r.es_primera_vez ?? false,
-  };
+      id: r.id,
+      fecha_hora: r.fecha_hora,
+      paciente: {
+        nombre_completo: nombreLimpio,
+        es_vip: (r.era_patients?.es_vip ?? false) || esVipPorEmoji,
+      },
+      profesional: { nombre: profNombre },
+      servicio: toVertical(r.vertical_calculada)
+        .replace("longevidad", "Longevidad")
+        .replace("dolor", "Dolor / Regenerativa")
+        .replace("sueroterapia", "Sueroterapia")
+        .replace("estudios", "Estudios diagnósticos")
+        .replace("nutricion", "Nutrición")
+        .replace("kinesiologia", "Kinesiología")
+        .replace("estetica", "Estética"),
+      vertical: toVertical(r.vertical_calculada),
+      es_primera_vez: esPrimeraVez,
+    };
   });
 
   // 8. Total professionals with appointments this week
@@ -213,6 +262,8 @@ export async function GET() {
     total_profesionales: profNames.size,
     kpi: {
       ...kpiCurrent,
+      tasa_recurrencia: tasaRecurrencia,
+      recurrentes: recurrenteCount,
       vs_semana_anterior: {
         visitas_unicas: kpiPrev.visitas_unicas,
         tasa_asistencia: kpiPrev.tasa_asistencia,

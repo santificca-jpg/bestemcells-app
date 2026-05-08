@@ -128,8 +128,8 @@ function parsePlanningHTML(html, date) {
     const slotId      = blockMatch[1];
     const h2Text      = blockMatch[2].replace(/<[^>]+>/g, "").trim();
 
-    // Formato: "Dr./Dra. Apellido, Nombre (N. Especialidad)"
-    const nameMatch = h2Text.match(/Dr\.\/Dra\.\s*(.+?)(?:\s*\(([^)]+)\))?$/);
+    // Formato: "Dr./Dra. Apellido, Nombre (N. Especialidad)" o "Lic. Nombre Apellido (...)"
+    const nameMatch = h2Text.match(/(?:Dr\.\/Dra\.|Lic\.?)\s*(.+?)(?:\s*\(([^)]+)\))?$/);
     if (!nameMatch) continue;
 
     const nombreCompleto = nameMatch[1].trim();
@@ -205,49 +205,59 @@ async function upsertProfesional(docId, data) {
 }
 
 async function upsertPaciente(nombreRaw, fechaIso) {
-  // Usamos nombre normalizado como dricloud_id temporal
+  const apptDate   = fechaIso.split("T")[0];
+  const esVip      = nombreRaw.includes("🧬");
   const dricloudId = nombreRaw.toLowerCase().replace(/[^a-záéíóúñü0-9]/g, "_");
 
   const { data: existing } = await supabase
     .from("era_patients")
-    .select("id, primera_visita_fecha")
+    .select("id, primera_visita_fecha, es_vip")
     .eq("dricloud_id", dricloudId)
     .single();
 
   if (existing) {
+    const updates = {};
+
     // Actualizar primera_visita_fecha si esta cita es anterior
-    const fechaCita = new Date(fechaIso);
+    const fechaCita   = new Date(fechaIso);
     const fechaActual = existing.primera_visita_fecha
       ? new Date(existing.primera_visita_fecha)
       : null;
+    let primeraVisitaFecha = existing.primera_visita_fecha;
     if (!fechaActual || fechaCita < fechaActual) {
-      await supabase
-        .from("era_patients")
-        .update({ primera_visita_fecha: fechaIso.split("T")[0] })
-        .eq("id", existing.id);
+      updates.primera_visita_fecha = apptDate;
+      primeraVisitaFecha = apptDate;
     }
-    return existing.id;
+
+    // Marcar VIP si el emoji aparece en el nombre
+    if (esVip && !existing.es_vip) updates.es_vip = true;
+
+    if (Object.keys(updates).length > 0) {
+      await supabase.from("era_patients").update(updates).eq("id", existing.id);
+    }
+
+    return { id: existing.id, primeraVisitaFecha };
   }
 
   // Separar nombre / apellidos
-  const parts = nombreRaw.split(",").map((s) => s.trim());
-  const apellidos = parts[0] || "";
-  const nombre    = parts[1] || "";
+  const parts        = nombreRaw.split(",").map((s) => s.trim());
+  const apellidos    = parts[0] || "";
+  const nombre       = parts[1] || "";
   const nombreCompleto = nombre ? `${nombre} ${apellidos}` : apellidos;
 
   const { data: inserted, error } = await supabase
     .from("era_patients")
     .insert({
-      dricloud_id:           dricloudId,
-      nombre_completo:       nombreCompleto,
-      primera_visita_fecha:  fechaIso.split("T")[0],
-      es_vip:                false,
+      dricloud_id:          dricloudId,
+      nombre_completo:      nombreCompleto,
+      primera_visita_fecha: apptDate,
+      es_vip:               esVip,
     })
     .select("id")
     .single();
 
   if (error) throw new Error(`Error insertando paciente ${nombreCompleto}: ${error.message}`);
-  return inserted.id;
+  return { id: inserted.id, primeraVisitaFecha: apptDate };
 }
 
 async function upsertCita(cpaId, pacienteId, profesionalId, data) {
@@ -262,7 +272,7 @@ async function upsertCita(cpaId, pacienteId, profesionalId, data) {
         duracion_min:       data.duracion_min,
         estado:             data.estado,
         vertical_calculada: data.vertical,
-        es_primera_vez:     false,
+        es_primera_vez:     data.es_primera_vez,
       },
       { onConflict: "dricloud_id" }
     );
@@ -354,7 +364,7 @@ async function login(page) {
       // Upsert citas
       for (const appt of appointments) {
         try {
-          const pacienteId    = await upsertPaciente(appt.nombre_paciente_raw, appt.fecha_hora);
+          const { id: pacienteId, primeraVisitaFecha } = await upsertPaciente(appt.nombre_paciente_raw, appt.fecha_hora);
           const profesionalId = profIdMap[appt.slot_id];
 
           if (!profesionalId) {
@@ -363,11 +373,14 @@ async function login(page) {
             continue;
           }
 
+          const esPrimeraVez = primeraVisitaFecha === appt.fecha_hora.split("T")[0];
+
           await upsertCita(appt.cpa_id, pacienteId, profesionalId, {
-            fecha_hora:  appt.fecha_hora,
-            duracion_min: appt.duracion_min,
-            estado:       appt.estado,
-            vertical:     doctorsMap[appt.slot_id]?.vertical ?? "longevidad",
+            fecha_hora:    appt.fecha_hora,
+            duracion_min:  appt.duracion_min,
+            estado:        appt.estado,
+            vertical:      doctorsMap[appt.slot_id]?.vertical ?? "longevidad",
+            es_primera_vez: esPrimeraVez,
           });
 
           totalInserted++;
