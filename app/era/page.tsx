@@ -69,8 +69,6 @@ export default async function EraOverview() {
           <KpiCard
             valor={`${kpi.vip} 🧬`}
             label="Pacientes VIP"
-            sub={`vs ${vs.vip} sem. ant.`}
-            delta={kpi.vip - vs.vip}
             color="#f39c12"
           />
           <KpiCard
@@ -186,7 +184,6 @@ export default async function EraOverview() {
             { label: "Visitas únicas", s1: vs.visitas_unicas, s2: kpi.visitas_unicas, pos: true },
             { label: "Tasa asistencia", s1: `${vs.tasa_asistencia}%`, s2: `${kpi.tasa_asistencia}%`, pos: true },
             { label: "Primera vez", s1: vs.primera_vez, s2: kpi.primera_vez, pos: true },
-            { label: "VIP", s1: vs.vip, s2: kpi.vip, pos: true },
             { label: "Cancelados", s1: vs.canceladas, s2: kpi.canceladas, pos: false },
           ].map(({ label, s1, s2, pos }) => {
             const n1 = typeof s1 === "string" ? parseFloat(s1) : s1;

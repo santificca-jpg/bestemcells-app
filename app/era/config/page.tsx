@@ -13,8 +13,15 @@ export default function ConfigPage() {
   );
   const [guardado, setGuardado] = useState(false);
 
-  const cambiarVertical = (id: string, v: Vertical) => {
+  const cambiarVerticalDefault = (id: string, v: Vertical) => {
     setProfs((ps) => ps.map((p) => p.id === id ? { ...p, vertical_default: v } : p));
+    setGuardado(false);
+  };
+
+  const cambiarVerticalSecundaria = (id: string, v: Vertical | "") => {
+    setProfs((ps) => ps.map((p) =>
+      p.id === id ? { ...p, vertical_secundaria: v === "" ? undefined : v as Vertical } : p
+    ));
     setGuardado(false);
   };
 
@@ -47,12 +54,14 @@ export default function ConfigPage() {
             <tr className="bg-gray-50 border-b border-gray-200">
               <th className="px-4 py-2 text-left text-xs font-bold text-gray-500 uppercase">Profesional</th>
               <th className="px-4 py-2 text-left text-xs font-bold text-gray-500 uppercase">Especialidad</th>
-              <th className="px-4 py-2 text-left text-xs font-bold text-gray-500 uppercase">Vertical por defecto</th>
+              <th className="px-4 py-2 text-left text-xs font-bold text-gray-500 uppercase">Vertical principal</th>
+              <th className="px-4 py-2 text-left text-xs font-bold text-gray-500 uppercase">Segunda vertical</th>
             </tr>
           </thead>
           <tbody>
             {profs.map((p) => {
-              const meta = VERTICAL_META[p.vertical_default];
+              const metaDefault = VERTICAL_META[p.vertical_default];
+              const metaSec = p.vertical_secundaria ? VERTICAL_META[p.vertical_secundaria] : null;
               return (
                 <tr key={p.id} className="border-b border-gray-100 hover:bg-gray-50">
                   <td className="px-4 py-2.5 font-semibold text-gray-800">{p.nombre}</td>
@@ -60,10 +69,23 @@ export default function ConfigPage() {
                   <td className="px-4 py-2.5">
                     <select
                       value={p.vertical_default}
-                      onChange={(e) => cambiarVertical(p.id, e.target.value as Vertical)}
+                      onChange={(e) => cambiarVerticalDefault(p.id, e.target.value as Vertical)}
                       className="text-xs border border-gray-300 rounded-lg px-2 py-1.5 font-semibold"
-                      style={{ color: meta.color }}
+                      style={{ color: metaDefault.color }}
                     >
+                      {VERTICALES.map((v) => (
+                        <option key={v} value={v}>{VERTICAL_META[v].emoji} {VERTICAL_META[v].label}</option>
+                      ))}
+                    </select>
+                  </td>
+                  <td className="px-4 py-2.5">
+                    <select
+                      value={p.vertical_secundaria ?? ""}
+                      onChange={(e) => cambiarVerticalSecundaria(p.id, e.target.value as Vertical | "")}
+                      className="text-xs border border-gray-300 rounded-lg px-2 py-1.5 font-semibold"
+                      style={{ color: metaSec?.color ?? "#9ca3af" }}
+                    >
+                      <option value="">— ninguna —</option>
                       {VERTICALES.map((v) => (
                         <option key={v} value={v}>{VERTICAL_META[v].emoji} {VERTICAL_META[v].label}</option>
                       ))}

@@ -9,17 +9,17 @@ import type {
 } from "./types";
 
 export const PROFESIONALES: Profesional[] = [
-  { id: "ayala", nombre: "Ayala Vázquez", especialidad: "Medicina del Dolor", vertical_default: "dolor", activo: true },
-  { id: "saravia", nombre: "Saravia Toledo", especialidad: "Medicina del Dolor", vertical_default: "dolor", activo: true },
-  { id: "garbelino", nombre: "Garbelino Moliné", especialidad: "Longevidad", vertical_default: "longevidad", activo: true },
-  { id: "ficcadenti", nombre: "Ficcadenti", especialidad: "Longevidad / Sueroterapia", vertical_default: "longevidad", activo: true },
-  { id: "rollan", nombre: "Rollán", especialidad: "Longevidad", vertical_default: "longevidad", activo: true },
-  { id: "vanetta", nombre: "Vanetta", especialidad: "Longevidad", vertical_default: "longevidad", activo: true },
-  { id: "camilli", nombre: "Camilli", especialidad: "Nutrición", vertical_default: "nutricion", activo: true },
-  { id: "cornejo", nombre: "Cornejo", especialidad: "Kinesiología", vertical_default: "kinesiologia", activo: true },
-  { id: "hiese", nombre: "Hiese", especialidad: "Kinesiología", vertical_default: "kinesiologia", activo: true },
-  { id: "ottonello", nombre: "Ottonello", especialidad: "Longevidad", vertical_default: "longevidad", activo: true },
-  { id: "sabate", nombre: "Sabaté", especialidad: "Sueroterapia", vertical_default: "sueroterapia", activo: true },
+  { id: "ayala",      nombre: "Ayala Vázquez",   especialidad: "Medicina del Dolor",             vertical_default: "dolor",      activo: true },
+  { id: "saravia",    nombre: "Saravia Toledo",   especialidad: "Medicina del Dolor",             vertical_default: "dolor",      activo: true },
+  { id: "garbelino",  nombre: "Garbelino Moliné", especialidad: "Longevidad / Estética",          vertical_default: "longevidad", vertical_secundaria: "estetica",    activo: true },
+  { id: "ficcadenti", nombre: "Ficcadenti",        especialidad: "Longevidad / Dolor",             vertical_default: "longevidad", vertical_secundaria: "dolor",       activo: true },
+  { id: "rollan",     nombre: "Rollán",            especialidad: "Longevidad",                     vertical_default: "longevidad", activo: true },
+  { id: "vanetta",    nombre: "Vanetta",           especialidad: "Longevidad / Estética",          vertical_default: "longevidad", vertical_secundaria: "estetica",    activo: true },
+  { id: "camilli",    nombre: "Camilli",           especialidad: "Nutrición",                      vertical_default: "nutricion",  activo: true },
+  { id: "cornejo",    nombre: "Cornejo",           especialidad: "Kinesiología",                   vertical_default: "kinesiologia", activo: true },
+  { id: "hiese",      nombre: "Hiese",             especialidad: "Kinesiología",                   vertical_default: "kinesiologia", activo: true },
+  { id: "ottonello",  nombre: "Ottonello",         especialidad: "Longevidad / Cardiología",       vertical_default: "longevidad", activo: true },
+  { id: "sabate",     nombre: "Sabaté",            especialidad: "Longevidad / Endocrinología",    vertical_default: "longevidad", activo: true },
 ];
 
 const P = (id: string) => PROFESIONALES.find((p) => p.id === id)!;
@@ -174,7 +174,6 @@ export const KPI_SEMANA: KpiSemana = {
     visitas_unicas: 128,
     tasa_asistencia: 88.7,
     primera_vez: 21,
-    vip: 8,
     canceladas: 13,
   },
 };

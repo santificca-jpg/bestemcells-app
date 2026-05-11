@@ -2,7 +2,7 @@ import { createClient } from "@supabase/supabase-js";
 import type { Vertical } from "./types";
 
 const VALID_VERTICALS = new Set<string>([
-  "longevidad", "dolor", "sueroterapia", "estudios",
+  "longevidad", "dolor", "sueroterapia", "estudios", "procedimientos",
   "nutricion", "kinesiologia", "estetica",
 ]);
 
@@ -154,7 +154,6 @@ export type DashboardData = {
       visitas_unicas: number;
       tasa_asistencia: number;
       primera_vez: number;
-      vip: number;
       canceladas: number;
     };
   };
@@ -172,13 +171,14 @@ export type DashboardData = {
 };
 
 const SERVICIO_LABEL: Record<Vertical, string> = {
-  longevidad:   "Longevidad",
-  dolor:        "Dolor / Regenerativa",
-  sueroterapia: "Sueroterapia",
-  estudios:     "Estudios diagnósticos",
-  nutricion:    "Nutrición",
-  kinesiologia: "Kinesiología",
-  estetica:     "Estética",
+  longevidad:     "Longevidad",
+  dolor:          "Dolor / Regenerativa",
+  sueroterapia:   "Sueroterapia",
+  estudios:       "Estudios diagnósticos",
+  procedimientos: "Procedimientos",
+  nutricion:      "Nutrición",
+  kinesiologia:   "Kinesiología",
+  estetica:       "Estética",
 };
 
 export async function getDashboardData(): Promise<DashboardData | null> {
@@ -297,7 +297,6 @@ export async function getDashboardData(): Promise<DashboardData | null> {
         visitas_unicas: kpiPrev.visitas_unicas,
         tasa_asistencia: kpiPrev.tasa_asistencia,
         primera_vez: kpiPrev.primera_vez,
-        vip: kpiPrev.vip,
         canceladas: kpiPrev.canceladas,
       },
     },

@@ -3,6 +3,7 @@ export type Vertical =
   | "dolor"
   | "sueroterapia"
   | "estudios"
+  | "procedimientos"
   | "nutricion"
   | "kinesiologia"
   | "estetica";
@@ -14,6 +15,7 @@ export interface Profesional {
   nombre: string;
   especialidad: string;
   vertical_default: Vertical;
+  vertical_secundaria?: Vertical;
   activo: boolean;
 }
 
@@ -50,7 +52,6 @@ export interface KpiSemana {
     visitas_unicas: number;
     tasa_asistencia: number;
     primera_vez: number;
-    vip: number;
     canceladas: number;
   };
 }

@@ -8,7 +8,7 @@ const supabase = createClient(
 );
 
 const VALID_VERTICALS = new Set<string>([
-  "longevidad", "dolor", "sueroterapia", "estudios",
+  "longevidad", "dolor", "sueroterapia", "estudios", "procedimientos",
   "nutricion", "kinesiologia", "estetica",
 ]);
 
@@ -268,7 +268,6 @@ export async function GET() {
         visitas_unicas: kpiPrev.visitas_unicas,
         tasa_asistencia: kpiPrev.tasa_asistencia,
         primera_vez: kpiPrev.primera_vez,
-        vip: kpiPrev.vip,
         canceladas: kpiPrev.canceladas,
       },
     },
