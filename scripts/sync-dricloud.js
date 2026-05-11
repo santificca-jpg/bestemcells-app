@@ -76,6 +76,78 @@ function resolverVertical(sala, especialidad) {
   return salaToVertical(sala) ?? especialidadToVertical(especialidad);
 }
 
+// ─── Mapeo de TipoCita → vertical ────────────────────────────────────────────
+// Usado para clasificar citas en consultorios donde la sala no alcanza.
+
+function tipoCitaToVertical(tipoCita) {
+  if (!tipoCita) return null;
+  const t = tipoCita.toLowerCase().trim();
+
+  // Estudios diagnósticos
+  if (t === "pic" || t === "adn test" || t.includes("oligoscan") || t === "d-roms") return "estudios";
+
+  // Procedimientos (células madre, PRP, fibroblastos, etc.)
+  if (t.includes("célula") || t.includes("celula") || t.includes("exosoma") ||
+      t.includes("fibroblast") || t.includes("implante msc") ||
+      t.includes("infusión ev") || t.includes("infusion ev") ||
+      t.includes("prp")) return "procedimientos";
+
+  // Sueroterapia (por si algún drip se agenda en consultorio)
+  if (t.includes("drip") || t.includes("sueroterapia")) return "sueroterapia";
+
+  // Estética
+  if (t.includes("botox") || t.includes("hialurónico") || t.includes("hialuronico") ||
+      t.includes("mesoterapia") || t.includes("peeling") ||
+      t.includes("laser") || t.includes("láser") ||
+      t.includes("long lasting") || t.includes("dermatolog")) return "estetica";
+
+  // Kinesiología
+  if (t.includes("kinesiolog")) return "kinesiologia";
+
+  return null; // sin override → usar especialidad del doctor
+}
+
+// ─── Fetch del TipoCita vía API de DriCloud ───────────────────────────────────
+// Llama a GetEventDetailCita (mismo endpoint que usa el modal) y parsea el select.
+
+async function fetchTipoCitas(page, cpaIds) {
+  const uniqueIds = [...new Set(cpaIds.filter((id) => id && id !== "0"))];
+  if (uniqueIds.length === 0) return {};
+
+  const slug = `/${DRICLOUD_SLUG}`;
+  const result = {};
+
+  // Procesar en bloques de 5 para no saturar DriCloud
+  for (let i = 0; i < uniqueIds.length; i += 5) {
+    const batch = uniqueIds.slice(i, i + 5);
+
+    const batchResult = await page.evaluate(async ([slug, ids]) => {
+      const out = {};
+      await Promise.all(ids.map(async (id) => {
+        try {
+          const resp = await fetch(`${slug}/Cita/GetEventDetailCita`, {
+            method: "POST",
+            headers: { "Content-Type": "application/x-www-form-urlencoded" },
+            body: `id=${id}&fechaStr=&tipo=1`,
+            credentials: "same-origin",
+          });
+          const html = await resp.text();
+          const selMatch = html.match(/<select[^>]+id="ddlTipoCitaNewEvent"[^>]*>([\s\S]*?)<\/select>/);
+          if (selMatch) {
+            const optMatch = selMatch[1].match(/<option[^>]+selected="selected"[^>]*>\s*([^<]+?)\s*<\/option>/);
+            if (optMatch) out[id] = optMatch[1].trim();
+          }
+        } catch (_) { /* ignorar errores individuales */ }
+      }));
+      return out;
+    }, [slug, batch]);
+
+    Object.assign(result, batchResult);
+  }
+
+  return result;
+}
+
 // ─── Helpers de fecha ────────────────────────────────────────────────────────
 
 function getLunesViernes() {
@@ -210,6 +282,7 @@ function parsePlanningHTML(html, date) {
       duracion_min:        duracion,
       estado,
       fecha_hora:          toISO(date, hora),
+      sala:                salaPerSlot[slotId] ?? "",
     });
   }
 
@@ -332,7 +405,26 @@ async function scrapeDia(page, date) {
   await page.waitForTimeout(2000);
 
   const html = await page.content();
-  return parsePlanningHTML(html, date);
+  const { appointments, doctorsMap } = parsePlanningHTML(html, date);
+
+  // Para turnos en consultorios, el nombre de sala no determina la vertical.
+  // Consultamos el TipoCita de cada cita para detectar Estudios, Estética, etc.
+  const consultorioCpaIds = appointments
+    .filter((a) => a.cpa_id !== "0" && !salaToVertical(a.sala))
+    .map((a) => a.cpa_id);
+
+  if (consultorioCpaIds.length > 0) {
+    console.log(`    → Consultando TipoCita para ${consultorioCpaIds.length} turno(s) en consultorio...`);
+    const tipoCitaMap = await fetchTipoCitas(page, consultorioCpaIds);
+
+    for (const appt of appointments) {
+      const tipoCita = tipoCitaMap[appt.cpa_id];
+      const override = tipoCitaToVertical(tipoCita);
+      if (override) appt.tipoCitaVertical = override;
+    }
+  }
+
+  return { appointments, doctorsMap };
 }
 
 async function login(page) {
@@ -418,7 +510,7 @@ async function login(page) {
             fecha_hora:    appt.fecha_hora,
             duracion_min:  appt.duracion_min,
             estado:        appt.estado,
-            vertical:      doctorsMap[appt.slot_id]?.vertical ?? "longevidad",
+            vertical:      appt.tipoCitaVertical ?? doctorsMap[appt.slot_id]?.vertical ?? "longevidad",
             es_primera_vez: esPrimeraVez,
           });
 
