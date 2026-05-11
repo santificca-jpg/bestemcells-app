@@ -109,21 +109,48 @@ function computeKpis(rows: RawApptMin[]) {
   };
 }
 
+const ALL_VERTICALS = [
+  "longevidad", "dolor", "sueroterapia", "estudios",
+  "procedimientos", "nutricion", "kinesiologia", "estetica",
+] as const;
+
 function computeDistribucion(rows: RawApptMin[]) {
   const activos = rows.filter((r) => r.estado !== "cancelada" && r.estado !== "no-show");
-  const totales: Record<string, number> = {};
+
+  const totales: Record<string, number> = Object.fromEntries(ALL_VERTICALS.map((v) => [v, 0]));
   for (const r of activos) {
     const v = toVertical(r.vertical_calculada);
     totales[v] = (totales[v] || 0) + 1;
   }
   const total = activos.length || 1;
-  return Object.entries(totales)
-    .sort((a, b) => b[1] - a[1])
-    .map(([vertical, cantidad]) => ({
-      vertical,
-      cantidad,
-      porcentaje: Math.round((cantidad / total) * 1000) / 10,
-    }));
+
+  const longevidadActivos = activos.filter((r) => toVertical(r.vertical_calculada) === "longevidad");
+  const ottonelloCount = longevidadActivos.filter((r) =>
+    r.era_professionals?.nombre?.toLowerCase().includes("ottonello")
+  ).length;
+  const sabateCount = longevidadActivos.filter((r) => {
+    const n = r.era_professionals?.nombre?.toLowerCase() ?? "";
+    return n.includes("sabaté") || n.includes("sabate");
+  }).length;
+
+  return ALL_VERTICALS
+    .slice()
+    .sort((a, b) => totales[b] - totales[a])
+    .map((vertical) => {
+      const cantidad = totales[vertical];
+      const item: { vertical: string; cantidad: number; porcentaje: number; sub?: { label: string; profesional: string; cantidad: number }[] } = {
+        vertical,
+        cantidad,
+        porcentaje: activos.length > 0 ? Math.round((cantidad / total) * 1000) / 10 : 0,
+      };
+      if (vertical === "longevidad") {
+        const sub = [];
+        if (ottonelloCount > 0) sub.push({ label: "Cardiología", profesional: "Ottonello", cantidad: ottonelloCount });
+        if (sabateCount > 0)   sub.push({ label: "Endocrinología", profesional: "Sabaté", cantidad: sabateCount });
+        if (sub.length > 0) item.sub = sub;
+      }
+      return item;
+    });
 }
 
 function computeTurnosPorDia(rows: RawAppt[], monday: Date) {

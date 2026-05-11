@@ -26,24 +26,40 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
+// ─── Mapeo de sala (despacho) → vertical ─────────────────────────────────────
+// En DriCloud las salas "Lounge Drip*" son sueroterapia y "Sala de Procedimientos"
+// es procedimientos. El resto se resuelve por especialidad del profesional.
+
+function salaToVertical(sala) {
+  if (!sala) return null;
+  const lower = sala.toLowerCase();
+  if (lower.includes("drip") || lower.includes("suero")) return "sueroterapia";
+  if (lower.includes("procedimiento"))                   return "procedimientos";
+  return null; // fallar → usar especialidad del doctor
+}
+
 // ─── Mapeo de especialidades → vertical ──────────────────────────────────────
 
 const SPECIALTY_TO_VERTICAL = {
-  "regenerativa y dolor":      "dolor",
-  "dolor":                     "dolor",
-  "longevidad y wellness":     "longevidad",
-  "longevidad":                "longevidad",
-  "nutrición":                 "nutricion",
-  "nutricion":                 "nutricion",
-  "kinesiología":              "kinesiologia",
-  "kinesiologia":              "kinesiologia",
+  "regenerativa y dolor":        "dolor",
+  "dolor":                       "dolor",
+  "longevidad y wellness":       "longevidad",
+  "longevidad":                  "longevidad",
+  "nutrición":                   "nutricion",
+  "nutricion":                   "nutricion",
+  "nutrición regenerativa":      "nutricion",
+  "nutricion regenerativa":      "nutricion",
+  "kinesiología":                "kinesiologia",
+  "kinesiologia":                "kinesiologia",
   "rehabilitación regenerativa": "kinesiologia",
   "rehabilitacion regenerativa": "kinesiologia",
-  "estética":                  "estetica",
-  "estetica":                  "estetica",
-  "sueroterapia":              "sueroterapia",
-  "estudios":                  "estudios",
-  "diagnóstico":               "estudios",
+  "estética":                    "estetica",
+  "estetica":                    "estetica",
+  "estética y antiage":          "estetica",
+  "estetica y antiage":          "estetica",
+  "sueroterapia":                "sueroterapia",
+  "estudios":                    "estudios",
+  "diagnóstico":                 "estudios",
 };
 
 function especialidadToVertical(especialidad) {
@@ -53,6 +69,11 @@ function especialidadToVertical(especialidad) {
     if (lower.includes(key)) return vertical;
   }
   return "longevidad";
+}
+
+// Vertical final: sala > especialidad del doctor
+function resolverVertical(sala, especialidad) {
+  return salaToVertical(sala) ?? especialidadToVertical(especialidad);
 }
 
 // ─── Helpers de fecha ────────────────────────────────────────────────────────
@@ -118,7 +139,24 @@ function getDatesInRange(start, end) {
 
 function parsePlanningHTML(html, date) {
   const appointments = [];
-  const doctorsMap = {}; // slot_id → { nombre, especialidad, vertical }
+  const doctorsMap = {}; // slot_id → { nombre, especialidad, vertical, sala }
+
+  // 0. Extraer el nombre de sala (despacho) para cada slot_id
+  //    Estructura: <div id="despachoN" ...> ... <h2>Sala Name</h2> ...  <div class="doctorAsignado drSLOT">
+  const salaPerSlot = {}; // slot_id → sala_name
+  const despachoParts = html.split(/<div[^>]+class="[^"]*\bdespacho\b[^"]*"[^>]*>/);
+  for (const part of despachoParts.slice(1)) {
+    // Extraer nombre de sala del panel-heading
+    const headingMatch = part.match(/panel-heading[\s\S]{0,300}?<h2[^>]*>[\s\S]*?<\/span>\s*([^<]+?)\s*<\/h2>/);
+    if (!headingMatch) continue;
+    const salaNombre = headingMatch[1].trim();
+
+    // Extraer todos los slot IDs en este despacho
+    const slotMatches = [...part.matchAll(/doctorAsignado dr(\d+)/g)];
+    for (const sm of slotMatches) {
+      salaPerSlot[sm[1]] = salaNombre;
+    }
+  }
 
   // 1. Construir mapa de doctores desde todos los bloques doctorAsignado
   const doctorBlockRegex = /<div class="doctorAsignado dr(\d+)"[^>]*>[\s\S]*?<h2[^>]*>\s*([\s\S]*?)\s*<\/h2>/g;
@@ -134,9 +172,10 @@ function parsePlanningHTML(html, date) {
 
     const nombreCompleto = nameMatch[1].trim();
     const especialidad   = nameMatch[2] ? nameMatch[2].replace(/^\d+\.\s*/, "").trim() : "";
-    const vertical       = especialidadToVertical(especialidad);
+    const sala           = salaPerSlot[slotId] ?? "";
+    const vertical       = resolverVertical(sala, especialidad);
 
-    doctorsMap[slotId] = { nombre: nombreCompleto, especialidad, vertical };
+    doctorsMap[slotId] = { nombre: nombreCompleto, especialidad, sala, vertical };
   }
 
   // 2. Extraer todos los turnos ocupados del HTML completo

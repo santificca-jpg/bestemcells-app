@@ -107,21 +107,53 @@ function computeKpis(rows: RawApptMin[]) {
   };
 }
 
+const ALL_VERTICALS: Vertical[] = [
+  "longevidad", "dolor", "sueroterapia", "estudios",
+  "procedimientos", "nutricion", "kinesiologia", "estetica",
+];
+
 function computeDistribucion(rows: RawApptMin[]) {
   const activos = rows.filter((r) => r.estado !== "cancelada" && r.estado !== "no-show");
-  const totales: Record<string, number> = {};
+
+  // Inicializar todas las verticales en 0 para que siempre aparezcan
+  const totales: Record<Vertical, number> = Object.fromEntries(
+    ALL_VERTICALS.map((v) => [v, 0])
+  ) as Record<Vertical, number>;
+
   for (const r of activos) {
     const v = toVertical(r.vertical_calculada);
-    totales[v] = (totales[v] || 0) + 1;
+    totales[v]++;
   }
+
   const total = activos.length || 1;
-  return Object.entries(totales)
-    .sort((a, b) => b[1] - a[1])
-    .map(([vertical, cantidad]) => ({
-      vertical: vertical as Vertical,
-      cantidad,
-      porcentaje: Math.round((cantidad / total) * 1000) / 10,
-    }));
+
+  // Sub-verticales dentro de longevidad: cardiología (Ottonello) y endocrinología (Sabaté)
+  const longevidadActivos = activos.filter((r) => toVertical(r.vertical_calculada) === "longevidad");
+  const ottonelloCount = longevidadActivos.filter((r) =>
+    r.era_professionals?.nombre?.toLowerCase().includes("ottonello")
+  ).length;
+  const sabateCount = longevidadActivos.filter((r) => {
+    const n = r.era_professionals?.nombre?.toLowerCase() ?? "";
+    return n.includes("sabaté") || n.includes("sabate");
+  }).length;
+
+  return ALL_VERTICALS
+    .sort((a, b) => totales[b] - totales[a])
+    .map((vertical) => {
+      const cantidad = totales[vertical];
+      const item: { vertical: Vertical; cantidad: number; porcentaje: number; sub?: { label: string; profesional: string; cantidad: number }[] } = {
+        vertical,
+        cantidad,
+        porcentaje: activos.length > 0 ? Math.round((cantidad / total) * 1000) / 10 : 0,
+      };
+      if (vertical === "longevidad") {
+        const sub = [];
+        if (ottonelloCount > 0) sub.push({ label: "Cardiología", profesional: "Ottonello", cantidad: ottonelloCount });
+        if (sabateCount > 0)   sub.push({ label: "Endocrinología", profesional: "Sabaté", cantidad: sabateCount });
+        if (sub.length > 0) item.sub = sub;
+      }
+      return item;
+    });
 }
 
 function computeTurnosPorDia(rows: RawAppt[], monday: Date) {
@@ -157,7 +189,7 @@ export type DashboardData = {
       canceladas: number;
     };
   };
-  distribucion: { vertical: Vertical; cantidad: number; porcentaje: number }[];
+  distribucion: { vertical: Vertical; cantidad: number; porcentaje: number; sub?: { label: string; profesional: string; cantidad: number }[] }[];
   turnos_por_dia: { dia: string; fecha: string; cantidad: number }[];
   proximas: {
     id: string;

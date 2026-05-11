@@ -56,10 +56,17 @@ export interface KpiSemana {
   };
 }
 
+export interface SubVertical {
+  label: string;
+  profesional: string;
+  cantidad: number;
+}
+
 export interface DistribucionVertical {
   vertical: Vertical;
   cantidad: number;
   porcentaje: number;
+  sub?: SubVertical[];
 }
 
 export interface TurnosDia {

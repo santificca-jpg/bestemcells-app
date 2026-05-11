@@ -9,7 +9,7 @@ import type { Vertical } from "@/lib/era/types";
 
 type Props = {
   turnos_por_dia: { dia: string; fecha: string; cantidad: number }[];
-  distribucion: { vertical: Vertical; cantidad: number; porcentaje: number }[];
+  distribucion: { vertical: Vertical; cantidad: number; porcentaje: number; sub?: { label: string; profesional: string; cantidad: number }[] }[];
 };
 
 export default function DashboardCharts({ turnos_por_dia, distribucion }: Props) {

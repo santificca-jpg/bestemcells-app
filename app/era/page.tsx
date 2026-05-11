@@ -99,13 +99,13 @@ export default async function EraOverview() {
           Distribución por vertical
         </h2>
         <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${distribucion.length}, 1fr)` }}>
-          {distribucion.map(({ vertical, cantidad, porcentaje }) => {
+          {distribucion.map(({ vertical, cantidad, porcentaje, sub }) => {
             const meta = VERTICAL_META[vertical] ?? VERTICAL_META["longevidad"];
             return (
               <div
                 key={vertical}
                 className="rounded-lg p-3 text-center border-t-4"
-                style={{ background: meta.bg, borderColor: meta.color }}
+                style={{ background: meta.bg, borderColor: meta.color, opacity: cantidad === 0 ? 0.45 : 1 }}
               >
                 <div className="text-xs font-bold uppercase tracking-wide mb-1" style={{ color: meta.color }}>
                   {meta.emoji} {meta.label}
@@ -114,8 +114,18 @@ export default async function EraOverview() {
                   {cantidad}
                 </div>
                 <div className="text-xs mt-1 opacity-80" style={{ color: meta.color }}>
-                  {porcentaje}%
+                  {cantidad === 0 ? "sin datos" : `${porcentaje}%`}
                 </div>
+                {sub && sub.length > 0 && (
+                  <div className="mt-2 pt-2 border-t border-black/10 text-left space-y-0.5">
+                    {sub.map((s) => (
+                      <div key={s.label} className="flex justify-between items-center text-xs pl-2 border-l-2" style={{ borderColor: meta.color, color: meta.color }}>
+                        <span className="opacity-75">{s.label} · {s.profesional}</span>
+                        <span className="font-bold">{s.cantidad}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             );
           })}
