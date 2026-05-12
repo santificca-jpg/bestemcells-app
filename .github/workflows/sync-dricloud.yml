@@ -1,0 +1,55 @@
+name: Sync DriCloud → Supabase
+
+on:
+  schedule:
+    # Buenos Aires = UTC-3
+    # 08:30 local → 11:30 UTC  (arranque del día)
+    - cron: '30 11 * * 1-5'
+    # 13:30 local → 16:30 UTC  (mediodía)
+    - cron: '30 16 * * 1-5'
+    # 20:00 local → 23:00 UTC  (cierre del día)
+    - cron: '0 23 * * 1-5'
+  workflow_dispatch:
+    inputs:
+      fecha_inicio:
+        description: 'Fecha inicio (YYYY-MM-DD). Vacío = hoy'
+        required: false
+      fecha_fin:
+        description: 'Fecha fin (YYYY-MM-DD). Vacío = igual a inicio'
+        required: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      - name: Instalar Chromium para Playwright
+        run: npx playwright install chromium --with-deps
+
+      - name: Sync DriCloud → Supabase
+        env:
+          DRICLOUD_BASE_URL:          ${{ secrets.DRICLOUD_BASE_URL }}
+          DRICLOUD_URL_CLINICA:       ${{ secrets.DRICLOUD_URL_CLINICA }}
+          DRICLOUD_USUARIO:           ${{ secrets.DRICLOUD_USUARIO }}
+          DRICLOUD_PASSWORD:          ${{ secrets.DRICLOUD_PASSWORD }}
+          NEXT_PUBLIC_SUPABASE_URL:   ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY:  ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          if [ -n "${{ github.event.inputs.fecha_inicio }}" ]; then
+            node scripts/sync-dricloud.js "${{ github.event.inputs.fecha_inicio }}" "${{ github.event.inputs.fecha_fin || github.event.inputs.fecha_inicio }}"
+          else
+            node scripts/sync-dricloud.js
+          fi
