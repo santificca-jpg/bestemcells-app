@@ -57,18 +57,28 @@ type RawApptMin = {
   era_professionals: { nombre: string } | null;
 };
 
+// Excluidos de "primera vez" (derivaciones internas, no consultas médicas propias)
 const EXCLUIR_PV = ["camilli", "cornejo", "hiese"] as const;
+
+// Técnicas de sueroterapia: no cuentan como visitas médicas en ningún vertical
+const EXCLUIR_TECNICOS = ["fedoto", "tucker", "montero"] as const;
 
 function esProfExcluido(nombre: string): boolean {
   const lower = nombre.toLowerCase();
   return EXCLUIR_PV.some((e) => lower.includes(e));
 }
 
+function esTecnico(nombre: string): boolean {
+  const lower = nombre.toLowerCase();
+  return EXCLUIR_TECNICOS.some((e) => lower.includes(e));
+}
+
 function computeKpis(rows: RawApptMin[]) {
-  const total = rows.length;
-  const canceladas = rows.filter((r) => r.estado === "cancelada").length;
-  const noShows = rows.filter((r) => r.estado === "no-show").length;
-  const activos = rows.filter((r) => r.estado !== "cancelada" && r.estado !== "no-show");
+  const sinTecnicos = rows.filter((r) => !esTecnico(r.era_professionals?.nombre ?? ""));
+  const total = sinTecnicos.length;
+  const canceladas = sinTecnicos.filter((r) => r.estado === "cancelada").length;
+  const noShows = sinTecnicos.filter((r) => r.estado === "no-show").length;
+  const activos = sinTecnicos.filter((r) => r.estado !== "cancelada" && r.estado !== "no-show");
 
   const visitasSet = new Set(
     activos.map((r) => `${r.paciente_id}:${r.fecha_hora.substring(0, 10)}`)
@@ -115,7 +125,11 @@ const ALL_VERTICALS = [
 ] as const;
 
 function computeDistribucion(rows: RawApptMin[]) {
-  const activos = rows.filter((r) => r.estado !== "cancelada" && r.estado !== "no-show");
+  const activos = rows.filter((r) =>
+    r.estado !== "cancelada" &&
+    r.estado !== "no-show" &&
+    !esTecnico(r.era_professionals?.nombre ?? "")
+  );
 
   const totales: Record<string, number> = Object.fromEntries(ALL_VERTICALS.map((v) => [v, 0]));
   for (const r of activos) {

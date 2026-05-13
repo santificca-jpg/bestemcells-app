@@ -51,18 +51,28 @@ type RawApptMin = {
   era_professionals: { nombre: string } | null;
 };
 
+// Excluidos de "primera vez" (derivaciones internas)
 const EXCLUIR_PV = ["camilli", "cornejo", "hiese"] as const;
+
+// Técnicas de sueroterapia: no cuentan como visitas médicas
+const EXCLUIR_TECNICOS = ["fedoto", "tucker", "montero"] as const;
 
 function esProfExcluido(nombre: string): boolean {
   const lower = nombre.toLowerCase();
   return EXCLUIR_PV.some((e) => lower.includes(e));
 }
 
+function esTecnico(nombre: string): boolean {
+  const lower = nombre.toLowerCase();
+  return EXCLUIR_TECNICOS.some((e) => lower.includes(e));
+}
+
 function computeKpis(rows: RawApptMin[]) {
-  const total = rows.length;
-  const canceladas = rows.filter((r) => r.estado === "cancelada").length;
-  const noShows = rows.filter((r) => r.estado === "no-show").length;
-  const activos = rows.filter((r) => r.estado !== "cancelada" && r.estado !== "no-show");
+  const sinTecnicos = rows.filter((r) => !esTecnico(r.era_professionals?.nombre ?? ""));
+  const total = sinTecnicos.length;
+  const canceladas = sinTecnicos.filter((r) => r.estado === "cancelada").length;
+  const noShows = sinTecnicos.filter((r) => r.estado === "no-show").length;
+  const activos = sinTecnicos.filter((r) => r.estado !== "cancelada" && r.estado !== "no-show");
 
   // Visitas únicas: paciente + día (no importa cuántos turnos tenga el mismo día)
   const visitasSet = new Set(
@@ -113,7 +123,11 @@ const ALL_VERTICALS: Vertical[] = [
 ];
 
 function computeDistribucion(rows: RawApptMin[]) {
-  const activos = rows.filter((r) => r.estado !== "cancelada" && r.estado !== "no-show");
+  const activos = rows.filter((r) =>
+    r.estado !== "cancelada" &&
+    r.estado !== "no-show" &&
+    !esTecnico(r.era_professionals?.nombre ?? "")
+  );
 
   // Inicializar todas las verticales en 0 para que siempre aparezcan
   const totales: Record<Vertical, number> = Object.fromEntries(
