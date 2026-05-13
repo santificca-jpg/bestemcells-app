@@ -26,19 +26,8 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
-// ─── Mapeo de sala (despacho) → vertical ─────────────────────────────────────
-// En DriCloud las salas "Lounge Drip*" son sueroterapia y "Sala de Procedimientos"
-// es procedimientos. El resto se resuelve por especialidad del profesional.
-
-function salaToVertical(sala) {
-  if (!sala) return null;
-  const lower = sala.toLowerCase();
-  if (lower.includes("drip") || lower.includes("suero")) return "sueroterapia";
-  if (lower.includes("procedimiento"))                   return "procedimientos";
-  return null; // fallar → usar especialidad del doctor
-}
-
 // ─── Mapeo de especialidades → vertical ──────────────────────────────────────
+// La sala/despacho NO determina la vertical — solo el TipoCita y la especialidad.
 
 const SPECIALTY_TO_VERTICAL = {
   "regenerativa y dolor":        "dolor",
@@ -71,13 +60,8 @@ function especialidadToVertical(especialidad) {
   return "longevidad";
 }
 
-// Vertical final: sala > especialidad del doctor
-function resolverVertical(sala, especialidad) {
-  return salaToVertical(sala) ?? especialidadToVertical(especialidad);
-}
-
 // ─── Mapeo de TipoCita → vertical ────────────────────────────────────────────
-// Usado para clasificar citas en consultorios donde la sala no alcanza.
+// TipoCita tiene prioridad. Si no hay match, se usa la especialidad del profesional.
 
 function tipoCitaToVertical(tipoCita) {
   if (!tipoCita) return null;
@@ -92,7 +76,7 @@ function tipoCitaToVertical(tipoCita) {
       t.includes("infusión ev") || t.includes("infusion ev") ||
       t.includes("prp")) return "procedimientos";
 
-  // Sueroterapia (por si algún drip se agenda en consultorio)
+  // Sueroterapia
   if (t.includes("drip") || t.includes("sueroterapia")) return "sueroterapia";
 
   // Estética
@@ -211,32 +195,15 @@ function getDatesInRange(start, end) {
 
 function parsePlanningHTML(html, date) {
   const appointments = [];
-  const doctorsMap = {}; // slot_id → { nombre, especialidad, vertical, sala }
+  const doctorsMap = {}; // slot_id → { nombre, especialidad }
 
-  // 0. Extraer el nombre de sala (despacho) para cada slot_id
-  //    Estructura: <div id="despachoN" ...> ... <h2>Sala Name</h2> ...  <div class="doctorAsignado drSLOT">
-  const salaPerSlot = {}; // slot_id → sala_name
-  const despachoParts = html.split(/<div[^>]+class="[^"]*\bdespacho\b[^"]*"[^>]*>/);
-  for (const part of despachoParts.slice(1)) {
-    // Extraer nombre de sala del panel-heading
-    const headingMatch = part.match(/panel-heading[\s\S]{0,300}?<h2[^>]*>[\s\S]*?<\/span>\s*([^<]+?)\s*<\/h2>/);
-    if (!headingMatch) continue;
-    const salaNombre = headingMatch[1].trim();
-
-    // Extraer todos los slot IDs en este despacho
-    const slotMatches = [...part.matchAll(/doctorAsignado dr(\d+)/g)];
-    for (const sm of slotMatches) {
-      salaPerSlot[sm[1]] = salaNombre;
-    }
-  }
-
-  // 1. Construir mapa de doctores desde todos los bloques doctorAsignado
+  // Construir mapa de doctores desde todos los bloques doctorAsignado
   const doctorBlockRegex = /<div class="doctorAsignado dr(\d+)"[^>]*>[\s\S]*?<h2[^>]*>\s*([\s\S]*?)\s*<\/h2>/g;
   let blockMatch;
 
   while ((blockMatch = doctorBlockRegex.exec(html)) !== null) {
-    const slotId      = blockMatch[1];
-    const h2Text      = blockMatch[2].replace(/<[^>]+>/g, "").trim();
+    const slotId  = blockMatch[1];
+    const h2Text  = blockMatch[2].replace(/<[^>]+>/g, "").trim();
 
     // Formato: "Dr./Dra. Apellido, Nombre (N. Especialidad)" o "Lic. Nombre Apellido (...)"
     const nameMatch = h2Text.match(/(?:Dr\.\/Dra\.|Lic\.?)\s*(.+?)(?:\s*\(([^)]+)\))?$/);
@@ -244,10 +211,8 @@ function parsePlanningHTML(html, date) {
 
     const nombreCompleto = nameMatch[1].trim();
     const especialidad   = nameMatch[2] ? nameMatch[2].replace(/^\d+\.\s*/, "").trim() : "";
-    const sala           = salaPerSlot[slotId] ?? "";
-    const vertical       = resolverVertical(sala, especialidad);
 
-    doctorsMap[slotId] = { nombre: nombreCompleto, especialidad, sala, vertical };
+    doctorsMap[slotId] = { nombre: nombreCompleto, especialidad };
   }
 
   // 2. Extraer todos los turnos ocupados del HTML completo
@@ -282,7 +247,6 @@ function parsePlanningHTML(html, date) {
       duracion_min:        duracion,
       estado,
       fecha_hora:          toISO(date, hora),
-      sala:                salaPerSlot[slotId] ?? "",
     });
   }
 
@@ -306,7 +270,7 @@ async function upsertProfesional(docId, data) {
       dricloud_id:      docId,
       nombre:           data.nombre,
       especialidad:     data.especialidad,
-      vertical_default: data.vertical,
+      vertical_default: especialidadToVertical(data.especialidad),
       activo:           true,
     })
     .select("id")
@@ -407,15 +371,13 @@ async function scrapeDia(page, date) {
   const html = await page.content();
   const { appointments, doctorsMap } = parsePlanningHTML(html, date);
 
-  // Para turnos en consultorios, el nombre de sala no determina la vertical.
-  // Consultamos el TipoCita de cada cita para detectar Estudios, Estética, etc.
-  const consultorioCpaIds = appointments
-    .filter((a) => a.cpa_id !== "0" && !salaToVertical(a.sala))
-    .map((a) => a.cpa_id);
+  // Consultar TipoCita para todos los turnos — es la fuente de verdad principal.
+  // La sala/despacho no se usa para clasificar verticales.
+  const allCpaIds = appointments.filter((a) => a.cpa_id !== "0").map((a) => a.cpa_id);
 
-  if (consultorioCpaIds.length > 0) {
-    console.log(`    → Consultando TipoCita para ${consultorioCpaIds.length} turno(s) en consultorio...`);
-    const tipoCitaMap = await fetchTipoCitas(page, consultorioCpaIds);
+  if (allCpaIds.length > 0) {
+    console.log(`    → Consultando TipoCita para ${allCpaIds.length} turno(s)...`);
+    const tipoCitaMap = await fetchTipoCitas(page, allCpaIds);
 
     for (const appt of appointments) {
       const tipoCita = tipoCitaMap[appt.cpa_id];
@@ -510,7 +472,7 @@ async function login(page) {
             fecha_hora:    appt.fecha_hora,
             duracion_min:  appt.duracion_min,
             estado:        appt.estado,
-            vertical:      appt.tipoCitaVertical ?? doctorsMap[appt.slot_id]?.vertical ?? "longevidad",
+            vertical:      appt.tipoCitaVertical ?? especialidadToVertical(doctorsMap[appt.slot_id]?.especialidad ?? "") ?? "longevidad",
             es_primera_vez: esPrimeraVez,
           });
 
