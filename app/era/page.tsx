@@ -18,8 +18,20 @@ export default async function EraOverview() {
     );
   }
 
-  const { kpi, distribucion, turnos_por_dia, proximas, semana_label, total_profesionales } = data;
+  const { kpi, distribucion, turnos_por_dia, proximas, semana_label, total_profesionales, ultima_sync } = data;
   const vs = kpi.vs_semana_anterior;
+
+  const ultimaSyncLabel = ultima_sync
+    ? new Intl.DateTimeFormat("es-AR", {
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+        timeZone: "America/Argentina/Buenos_Aires",
+      }).format(new Date(ultima_sync)).replace(",", " ·") + " hs"
+    : null;
 
   return (
     <div className="p-6 space-y-6">
@@ -33,6 +45,11 @@ export default async function EraOverview() {
           <p className="text-white/60 text-sm mt-0.5">
             {semana_label} · {total_profesionales} profesionales
           </p>
+          {ultimaSyncLabel && (
+            <p className="text-white/50 text-xs mt-0.5">
+              Última actualización: {ultimaSyncLabel}
+            </p>
+          )}
         </div>
         <div className="bg-white/15 border border-white/30 rounded-full px-4 py-2 text-sm font-semibold">
           {semana_label}
@@ -85,9 +102,9 @@ export default async function EraOverview() {
             color="#7c3aed"
           />
           <KpiCard
-            valor={`${kpi.tasa_recurrencia}%`}
-            label="Tasa recurrencia"
-            sub={`${kpi.recurrentes} de ${kpi.visitas_unicas} pacientes`}
+            valor={kpi.tasa_recurrencia}
+            label="Visitas/paciente mes"
+            sub={`${kpi.visitas_mes} visitas · ${kpi.pacientes_unicos_mes} pac.`}
             color="#0891b2"
           />
         </div>
@@ -135,14 +152,14 @@ export default async function EraOverview() {
       {/* Gráficos (cliente) */}
       <DashboardCharts turnos_por_dia={turnos_por_dia} distribucion={distribucion} />
 
-      {/* Primeras citas de la semana */}
+      {/* Pacientes de primera vez */}
       <section>
         <h2 className="text-xs font-bold uppercase tracking-wide border-l-4 pl-3 mb-3" style={{ borderColor: "#0f3460", color: "#1a1a2e" }}>
-          Primeras citas de la semana
+          Pacientes de primera vez esta semana
         </h2>
         <div className="bg-white rounded-xl shadow-sm overflow-hidden">
           {proximas.length === 0 ? (
-            <div className="px-4 py-6 text-sm text-gray-400 text-center">Sin citas registradas</div>
+            <div className="px-4 py-6 text-sm text-gray-400 text-center">Sin pacientes de primera vez esta semana</div>
           ) : proximas.map((c) => {
             const meta = VERTICAL_META[c.vertical] ?? VERTICAL_META["longevidad"];
             const dt = new Date(c.fecha_hora);
@@ -152,26 +169,36 @@ export default async function EraOverview() {
             return (
               <div
                 key={c.id}
-                className="flex items-center gap-3 px-4 py-2.5 border-b border-gray-100 last:border-0 hover:bg-gray-50 transition-colors"
+                className="px-4 py-3 border-b border-gray-100 last:border-0 hover:bg-gray-50 transition-colors"
                 style={{ borderLeft: `3px solid ${meta.color}` }}
               >
-                <div className="text-xs font-bold text-gray-400 w-16 shrink-0">
-                  {dia}/{mes} {hora}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="text-sm font-semibold text-gray-800 truncate">
-                    {c.paciente.nombre_completo}
-                    {c.paciente.es_vip && <span className="ml-1">🧬</span>}
+                <div className="flex items-center gap-3">
+                  <div className="text-xs font-bold text-gray-400 w-16 shrink-0">
+                    {dia}/{mes} {hora}
                   </div>
-                  <div className="text-xs text-gray-400 truncate">{c.servicio}</div>
-                </div>
-                <div className="text-xs text-gray-400 italic shrink-0">{c.profesional.nombre}</div>
-                <div className="flex gap-1 shrink-0">
-                  {c.es_primera_vez && (
-                    <span className="text-xs font-bold px-1.5 py-0.5 rounded bg-blue-100 text-blue-700">PV</span>
-                  )}
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-semibold text-gray-800 truncate">
+                      {c.paciente.nombre_completo}
+                      {c.paciente.es_vip && <span className="ml-1">🧬</span>}
+                    </div>
+                  </div>
+                  <div className="text-xs text-gray-400 italic shrink-0">{c.profesional.nombre}</div>
                   <VerticalBadge vertical={c.vertical as Vertical} />
                 </div>
+                {(c.motivo_consulta || c.observaciones) && (
+                  <div className="mt-1.5 ml-[76px] space-y-0.5">
+                    {c.motivo_consulta && (
+                      <p className="text-xs text-gray-600">
+                        <span className="font-semibold text-gray-500">Motivo: </span>{c.motivo_consulta}
+                      </p>
+                    )}
+                    {c.observaciones && (
+                      <p className="text-xs text-gray-500 italic">
+                        <span className="font-semibold not-italic">Obs: </span>{c.observaciones}
+                      </p>
+                    )}
+                  </div>
+                )}
               </div>
             );
           })}

@@ -91,10 +91,13 @@ function tipoCitaToVertical(tipoCita) {
   return null; // sin override → usar especialidad del doctor
 }
 
-// ─── Fetch del TipoCita vía API de DriCloud ───────────────────────────────────
-// Llama a GetEventDetailCita (mismo endpoint que usa el modal) y parsea el select.
+// ─── Fetch de detalles de cita vía API de DriCloud ───────────────────────────
+// Llama a GetEventDetailCita (mismo endpoint que usa el modal) y extrae:
+//   - TipoCita (para clasificar vertical)
+//   - Observaciones (campo libre del turno)
+//   - Motivo de consulta
 
-async function fetchTipoCitas(page, cpaIds) {
+async function fetchCitaDetails(page, cpaIds) {
   const uniqueIds = [...new Set(cpaIds.filter((id) => id && id !== "0"))];
   if (uniqueIds.length === 0) return {};
 
@@ -116,12 +119,29 @@ async function fetchTipoCitas(page, cpaIds) {
             credentials: "same-origin",
           });
           const html = await resp.text();
+
+          // TipoCita
+          let tipoCita = null;
           const selMatch = html.match(/<select[^>]+id="ddlTipoCitaNewEvent"[^>]*>([\s\S]*?)<\/select>/);
           if (selMatch) {
             const optMatch = selMatch[1].match(/<option[^>]+selected="selected"[^>]*>\s*([^<]+?)\s*<\/option>/);
-            if (optMatch) out[id] = optMatch[1].trim();
+            if (optMatch) tipoCita = optMatch[1].trim();
           }
-        } catch (_) { /* ignorar errores individuales */ }
+
+          // Motivo de consulta (textarea con id/name que contiene "Motivo" o "motivo")
+          let motivoConsulta = null;
+          const motivoMatch = html.match(/<textarea[^>]+(?:id|name)="[^"]*[Mm]otivo[^"]*"[^>]*>([\s\S]*?)<\/textarea>/);
+          if (motivoMatch) motivoConsulta = motivoMatch[1].trim() || null;
+
+          // Observaciones (textarea con id/name que contiene "Observ" o "observ")
+          let observaciones = null;
+          const obsMatch = html.match(/<textarea[^>]+(?:id|name)="[^"]*[Oo]bserv[^"]*"[^>]*>([\s\S]*?)<\/textarea>/);
+          if (obsMatch) observaciones = obsMatch[1].trim() || null;
+
+          out[id] = { tipoCita, motivoConsulta, observaciones };
+        } catch (_) {
+          out[id] = { tipoCita: null, motivoConsulta: null, observaciones: null };
+        }
       }));
       return out;
     }, [slug, batch]);
@@ -349,6 +369,8 @@ async function upsertCita(cpaId, pacienteId, profesionalId, data) {
         estado:             data.estado,
         vertical_calculada: data.vertical,
         es_primera_vez:     data.es_primera_vez,
+        motivo_consulta:    data.motivoConsulta ?? null,
+        observaciones:      data.observaciones ?? null,
       },
       { onConflict: "dricloud_id" }
     );
@@ -376,13 +398,15 @@ async function scrapeDia(page, date) {
   const allCpaIds = appointments.filter((a) => a.cpa_id !== "0").map((a) => a.cpa_id);
 
   if (allCpaIds.length > 0) {
-    console.log(`    → Consultando TipoCita para ${allCpaIds.length} turno(s)...`);
-    const tipoCitaMap = await fetchTipoCitas(page, allCpaIds);
+    console.log(`    → Consultando detalles para ${allCpaIds.length} turno(s)...`);
+    const detailsMap = await fetchCitaDetails(page, allCpaIds);
 
     for (const appt of appointments) {
-      const tipoCita = tipoCitaMap[appt.cpa_id];
-      const override = tipoCitaToVertical(tipoCita);
+      const details = detailsMap[appt.cpa_id] ?? {};
+      const override = tipoCitaToVertical(details.tipoCita);
       if (override) appt.tipoCitaVertical = override;
+      appt.motivoConsulta = details.motivoConsulta ?? null;
+      appt.observaciones  = details.observaciones ?? null;
     }
   }
 
@@ -437,6 +461,14 @@ async function login(page) {
   let totalInserted = 0;
   let totalErrors   = 0;
 
+  // Registrar inicio del sync en bitácora
+  const { data: syncLogRow } = await supabase
+    .from("era_sync_log")
+    .insert({ status: "running" })
+    .select("id")
+    .single();
+  const syncLogId = syncLogRow?.id ?? null;
+
   try {
     await login(page);
 
@@ -466,14 +498,19 @@ async function login(page) {
             continue;
           }
 
-          const esPrimeraVez = primeraVisitaFecha === appt.fecha_hora.split("T")[0];
+          const EXCLUIR_PV = ["camilli", "cornejo", "hiese", "ottonello", "sabate", "sabaté"];
+          const profNombreLower = (doctorsMap[appt.slot_id]?.nombre ?? "").toLowerCase();
+          const esExcluidoPV = EXCLUIR_PV.some((e) => profNombreLower.includes(e));
+          const esPrimeraVez = primeraVisitaFecha === appt.fecha_hora.split("T")[0] && !esExcluidoPV;
 
           await upsertCita(appt.cpa_id, pacienteId, profesionalId, {
-            fecha_hora:    appt.fecha_hora,
-            duracion_min:  appt.duracion_min,
-            estado:        appt.estado,
-            vertical:      appt.tipoCitaVertical ?? especialidadToVertical(doctorsMap[appt.slot_id]?.especialidad ?? "") ?? "longevidad",
-            es_primera_vez: esPrimeraVez,
+            fecha_hora:      appt.fecha_hora,
+            duracion_min:    appt.duracion_min,
+            estado:          appt.estado,
+            vertical:        appt.tipoCitaVertical ?? especialidadToVertical(doctorsMap[appt.slot_id]?.especialidad ?? "") ?? "longevidad",
+            es_primera_vez:  esPrimeraVez,
+            motivoConsulta:  appt.motivoConsulta ?? null,
+            observaciones:   appt.observaciones ?? null,
           });
 
           totalInserted++;
@@ -488,8 +525,29 @@ async function login(page) {
     console.log(`   Turnos sincronizados: ${totalInserted}`);
     if (totalErrors > 0) console.log(`   Errores: ${totalErrors}`);
 
+    if (syncLogId) {
+      await supabase
+        .from("era_sync_log")
+        .update({
+          finished_at: new Date().toISOString(),
+          appointments_synced: totalInserted,
+          status: totalErrors > 0 ? "error" : "ok",
+        })
+        .eq("id", syncLogId);
+    }
   } catch (err) {
     console.error(`\n❌ Error fatal: ${err.message}`);
+    if (syncLogId) {
+      await supabase
+        .from("era_sync_log")
+        .update({
+          finished_at: new Date().toISOString(),
+          appointments_synced: totalInserted,
+          errors: { message: err.message },
+          status: "error",
+        })
+        .eq("id", syncLogId);
+    }
   } finally {
     await browser.close();
   }

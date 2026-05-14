@@ -38,6 +38,8 @@ type RawAppt = {
   duracion_min: number;
   estado: string;
   vertical_calculada: string | null;
+  observaciones: string | null;
+  motivo_consulta: string | null;
   era_professionals: { nombre: string } | null;
   era_patients: { nombre_completo: string; es_vip: boolean; primera_visita_fecha: string | null } | null;
 };
@@ -51,8 +53,9 @@ type RawApptMin = {
   era_professionals: { nombre: string } | null;
 };
 
-// Excluidos de "primera vez" (derivaciones internas)
-const EXCLUIR_PV = ["camilli", "cornejo", "hiese"] as const;
+// Excluidos de "primera vez": derivaciones internas + cardiología + endocrinología
+// (los pacientes de esas especialidades ya son pacientes de ERA, no cuentan como debut)
+const EXCLUIR_PV = ["camilli", "cornejo", "hiese", "ottonello", "sabate", "sabaté"];
 
 // Técnicas de sueroterapia: no cuentan como visitas médicas
 const EXCLUIR_TECNICOS = ["fedoto", "tucker", "montero"] as const;
@@ -186,6 +189,7 @@ function computeTurnosPorDia(rows: RawAppt[], monday: Date) {
 export type DashboardData = {
   semana_label: string;
   total_profesionales: number;
+  ultima_sync: string | null;
   kpi: {
     visitas_unicas: number;
     tasa_asistencia: number;
@@ -194,8 +198,10 @@ export type DashboardData = {
     canceladas: number;
     no_shows: number;
     tasa_pv: number;
+    // Recurrencia mensual: visitas únicas del mes / pacientes únicos del mes
     tasa_recurrencia: number;
-    recurrentes: number;
+    visitas_mes: number;
+    pacientes_unicos_mes: number;
     vs_semana_anterior: {
       visitas_unicas: number;
       tasa_asistencia: number;
@@ -213,6 +219,8 @@ export type DashboardData = {
     servicio: string;
     vertical: Vertical;
     es_primera_vez: boolean;
+    motivo_consulta: string | null;
+    observaciones: string | null;
   }[];
 };
 
@@ -253,7 +261,7 @@ export async function getDashboardData(): Promise<DashboardData | null> {
   const { data: currentRows, error } = await supabase
     .from("era_appointments")
     .select(`
-      id, paciente_id, fecha_hora, duracion_min, estado, vertical_calculada,
+      id, paciente_id, fecha_hora, duracion_min, estado, vertical_calculada, observaciones, motivo_consulta,
       era_professionals!profesional_id(nombre),
       era_patients!paciente_id(nombre_completo, es_vip, primera_visita_fecha)
     `)
@@ -273,13 +281,24 @@ export async function getDashboardData(): Promise<DashboardData | null> {
     .gte("fecha_hora", prevMonday.toISOString())
     .lte("fecha_hora", prevFriday.toISOString());
 
-  // Pacientes activos en las 4 semanas previas a la semana actual (para tasa de recurrencia)
-  const fourWeeksAgo = addDays(monday, -28);
-  const { data: prior4Rows } = await supabase
+  // Datos del mes completo para tasa de recurrencia mensual
+  const startOfMonth = new Date(monday.getFullYear(), monday.getMonth(), 1);
+  const endOfMonth = new Date(monday.getFullYear(), monday.getMonth() + 1, 0, 23, 59, 59, 999);
+  const { data: monthRows } = await supabase
     .from("era_appointments")
-    .select("paciente_id, estado")
-    .gte("fecha_hora", fourWeeksAgo.toISOString())
-    .lt("fecha_hora", monday.toISOString());
+    .select("paciente_id, fecha_hora, estado, era_professionals!profesional_id(nombre)")
+    .gte("fecha_hora", startOfMonth.toISOString())
+    .lte("fecha_hora", endOfMonth.toISOString());
+
+  // Último sync exitoso (bitácora era_sync_log)
+  const { data: lastSync } = await supabase
+    .from("era_sync_log")
+    .select("finished_at")
+    .eq("status", "ok")
+    .not("finished_at", "is", null)
+    .order("finished_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
 
   const rows = (currentRows ?? []) as unknown as RawAppt[];
   const prev = (prevRows ?? []) as unknown as RawApptMin[];
@@ -287,46 +306,50 @@ export async function getDashboardData(): Promise<DashboardData | null> {
   const kpiCurrent = computeKpis(rows as unknown as RawApptMin[]);
   const kpiPrev = computeKpis(prev);
 
-  // Tasa de recurrencia: pacientes de esta semana que también vinieron en las 4 semanas anteriores
-  const prior4PatientIds = new Set(
-    (prior4Rows ?? [])
-      .filter((r: { estado: string }) => r.estado !== "cancelada" && r.estado !== "no-show")
-      .map((r: { paciente_id: string }) => r.paciente_id)
+  // Recurrencia mensual: visitas únicas del mes / pacientes únicos del mes
+  const monthActivos = (monthRows ?? []).filter((r: any) =>
+    r.estado !== "cancelada" &&
+    r.estado !== "no-show" &&
+    !esTecnico(r.era_professionals?.nombre ?? "")
   );
-  const activosCurrent = (rows as unknown as RawApptMin[]).filter(
-    (r) => r.estado !== "cancelada" && r.estado !== "no-show"
+  const visitasMesSet = new Set(
+    monthActivos.map((r: any) => `${r.paciente_id}:${r.fecha_hora.substring(0, 10)}`)
   );
-  const uniquePatientsCurrent = new Set(activosCurrent.map((r) => r.paciente_id));
-  const recurrenteCount = [...uniquePatientsCurrent].filter((id) => prior4PatientIds.has(id)).length;
+  const visitasMes = visitasMesSet.size;
+  const pacientesUnicosMes = new Set(monthActivos.map((r: any) => r.paciente_id)).size;
   const tasaRecurrencia =
-    uniquePatientsCurrent.size > 0
-      ? Math.round((recurrenteCount / uniquePatientsCurrent.size) * 1000) / 10
-      : 0;
+    pacientesUnicosMes > 0 ? Math.round((visitasMes / pacientesUnicosMes) * 10) / 10 : 0;
 
   const semanaLabel = `${monday.getDate()}–${friday.getDate()} ${MESES[monday.getMonth()]} ${monday.getFullYear()}`;
 
-  const proximas = rows.slice(0, 8).map((r) => {
-    const nombreRaw = r.era_patients?.nombre_completo ?? "Paciente";
-    const esVipPorEmoji = nombreRaw.includes("🧬");
-    const nombreLimpio = nombreRaw.replace(/🧬\s*/g, "").trim();
-    const vertical = toVertical(r.vertical_calculada);
-    const apptDate = r.fecha_hora.substring(0, 10);
-    const profNombre = r.era_professionals?.nombre ?? "";
-    const esPrimeraVez =
-      r.era_patients?.primera_visita_fecha === apptDate && !esProfExcluido(profNombre);
-    return {
-      id: r.id,
-      fecha_hora: r.fecha_hora,
-      paciente: {
-        nombre_completo: nombreLimpio,
-        es_vip: (r.era_patients?.es_vip ?? false) || esVipPorEmoji,
-      },
-      profesional: { nombre: profNombre },
-      servicio: SERVICIO_LABEL[vertical],
-      vertical,
-      es_primera_vez: esPrimeraVez,
-    };
-  });
+  // Solo pacientes de primera vez de la semana (excluye derivaciones internas y cardio/endocrino)
+  const proximas = rows
+    .filter((r) => {
+      const apptDate = r.fecha_hora.substring(0, 10);
+      const pvFecha = r.era_patients?.primera_visita_fecha;
+      const profNombre = r.era_professionals?.nombre ?? "";
+      return pvFecha === apptDate && !esProfExcluido(profNombre);
+    })
+    .map((r) => {
+      const nombreRaw = r.era_patients?.nombre_completo ?? "Paciente";
+      const esVipPorEmoji = nombreRaw.includes("🧬");
+      const nombreLimpio = nombreRaw.replace(/🧬\s*/g, "").trim();
+      const vertical = toVertical(r.vertical_calculada);
+      return {
+        id: r.id,
+        fecha_hora: r.fecha_hora,
+        paciente: {
+          nombre_completo: nombreLimpio,
+          es_vip: (r.era_patients?.es_vip ?? false) || esVipPorEmoji,
+        },
+        profesional: { nombre: r.era_professionals?.nombre ?? "" },
+        servicio: SERVICIO_LABEL[vertical],
+        vertical,
+        es_primera_vez: true,
+        motivo_consulta: r.motivo_consulta ?? null,
+        observaciones: r.observaciones ?? null,
+      };
+    });
 
   const profNames = new Set(
     rows.map((r) => r.era_professionals?.nombre).filter(Boolean)
@@ -335,10 +358,12 @@ export async function getDashboardData(): Promise<DashboardData | null> {
   return {
     semana_label: semanaLabel,
     total_profesionales: profNames.size,
+    ultima_sync: lastSync?.finished_at ?? null,
     kpi: {
       ...kpiCurrent,
       tasa_recurrencia: tasaRecurrencia,
-      recurrentes: recurrenteCount,
+      visitas_mes: visitasMes,
+      pacientes_unicos_mes: pacientesUnicosMes,
       vs_semana_anterior: {
         visitas_unicas: kpiPrev.visitas_unicas,
         tasa_asistencia: kpiPrev.tasa_asistencia,
@@ -417,24 +442,26 @@ export async function getAgendaData(): Promise<AgendaData | null> {
     };
   });
 
-  const citas: AgendaCita[] = (rows as any[]).map((r) => {
-    const nombreRaw = r.era_patients?.nombre_completo ?? "Paciente";
-    const esVipEmoji = nombreRaw.includes("🧬");
-    const nombreLimpio = nombreRaw.replace(/🧬\s*/g, "").trim();
-    const vertical = toVertical(r.vertical_calculada);
-    return {
-      id: r.id,
-      fecha_hora: r.fecha_hora,
-      paciente: {
-        nombre_completo: nombreLimpio,
-        es_vip: (r.era_patients?.es_vip ?? false) || esVipEmoji,
-      },
-      profesional: { nombre: r.era_professionals?.nombre ?? "" },
-      servicio: r.era_services?.nombre ?? SERVICIO_LABEL[vertical],
-      vertical,
-      es_primera_vez: r.es_primera_vez ?? false,
-    };
-  });
+  const citas: AgendaCita[] = (rows as any[])
+    .filter((r) => !esTecnico(r.era_professionals?.nombre ?? ""))
+    .map((r) => {
+      const nombreRaw = r.era_patients?.nombre_completo ?? "Paciente";
+      const esVipEmoji = nombreRaw.includes("🧬");
+      const nombreLimpio = nombreRaw.replace(/🧬\s*/g, "").trim();
+      const vertical = toVertical(r.vertical_calculada);
+      return {
+        id: r.id,
+        fecha_hora: r.fecha_hora,
+        paciente: {
+          nombre_completo: nombreLimpio,
+          es_vip: (r.era_patients?.es_vip ?? false) || esVipEmoji,
+        },
+        profesional: { nombre: r.era_professionals?.nombre ?? "" },
+        servicio: r.era_services?.nombre ?? SERVICIO_LABEL[vertical],
+        vertical,
+        es_primera_vez: r.es_primera_vez ?? false,
+      };
+    });
 
   const profesionales = [
     ...new Set(citas.map((c) => c.profesional.nombre).filter(Boolean)),
