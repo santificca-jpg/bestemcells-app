@@ -32,8 +32,8 @@ export default async function DrilldownProfesional({ params }: { params: Promise
       <Link href="/era/profesionales" className="text-blue-600 text-sm hover:underline">← Profesionales</Link>
 
       {/* Header */}
-      <div className="bg-white rounded-xl p-5 shadow-sm border-l-4" style={{ borderColor: "#0f3460" }}>
-        <h1 className="text-xl font-black text-gray-800">{perf.nombre}</h1>
+      <div className="bg-white rounded-xl p-5 shadow-sm border-l-4" style={{ borderColor: "#2C3A5B" }}>
+        <h1 className="text-xl font-semibold text-gray-800">{perf.nombre}</h1>
         <p className="text-sm text-gray-500 mt-0.5">{perf.especialidad}</p>
         <p className="text-xs text-gray-400 mt-0.5">Semana {semana_label}</p>
         <div className="grid grid-cols-5 gap-3 mt-4">
@@ -45,7 +45,7 @@ export default async function DrilldownProfesional({ params }: { params: Promise
             { label: "Cancelados", valor: perf.cancelados + perf.no_shows || "—" },
           ].map(({ label, valor }) => (
             <div key={label} className="text-center">
-              <div className="text-2xl font-black text-gray-800">{valor}</div>
+              <div className="text-2xl font-semibold text-gray-800">{valor}</div>
               <div className="text-xs text-gray-400 uppercase tracking-wide mt-0.5">{label}</div>
             </div>
           ))}
@@ -61,7 +61,7 @@ export default async function DrilldownProfesional({ params }: { params: Promise
             if (!meta) return null;
             return (
               <div key={v} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-semibold" style={{ background: meta.bg, color: meta.color }}>
-                {meta.emoji} {meta.label} <span className="font-black">({n})</span>
+                {meta.emoji} {meta.label} <span className="font-semibold">({n})</span>
               </div>
             );
           })}

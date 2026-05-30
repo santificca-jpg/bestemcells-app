@@ -29,13 +29,13 @@ export default function ConfigPage() {
     <div className="p-6 space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-lg font-black text-gray-800">Configuración</h1>
+          <h1 className="text-lg font-semibold text-gray-800">Configuración</h1>
           <p className="text-xs text-gray-400 mt-0.5">Ajustá el mapeo de verticales por profesional</p>
         </div>
         <button
           onClick={() => setGuardado(true)}
           className="px-4 py-2 rounded-lg text-sm font-semibold text-white transition-colors"
-          style={{ background: "#0f3460" }}
+          style={{ background: "#2C3A5B" }}
         >
           {guardado ? "✓ Guardado" : "Guardar cambios"}
         </button>

@@ -5,7 +5,7 @@ import type { AgendaData } from "@/lib/era/dashboard-data";
 import { VERTICAL_META } from "@/lib/era/verticals";
 import type { Vertical } from "@/lib/era/types";
 
-const HEADERS_BG = ["#1a1a2e", "#16213e", "#0f3460", "#1a4080", "#1560a8"];
+const HEADERS_BG = ["#232E49", "#3E4095", "#2C3A5B", "#1a4080", "#1560a8"];
 
 export default function AgendaWeekView({ data }: { data: AgendaData }) {
   const [filtroVertical, setFiltroVertical] = useState<Vertical | "todas">("todas");
@@ -20,7 +20,7 @@ export default function AgendaWeekView({ data }: { data: AgendaData }) {
   return (
     <div className="p-6 space-y-4">
       <div className="flex items-center justify-between">
-        <h1 className="text-lg font-black text-gray-800">Agenda semanal</h1>
+        <h1 className="text-lg font-semibold text-gray-800">Agenda semanal</h1>
         <div className="flex gap-2">
           <select
             className="text-xs border border-gray-300 rounded-lg px-2 py-1.5 bg-white"

@@ -7,12 +7,22 @@ import type { Vertical } from "@/lib/era/types";
 
 export const revalidate = 300; // refrescar datos cada 5 minutos
 
+// Encabezado de sección con acento dorado de marca
+function SectionTitle({ children }: { children: React.ReactNode }) {
+  return (
+    <h2 className="flex items-center gap-2.5 text-[12px] font-display font-medium uppercase tracking-[0.14em] text-navy/70 mb-3">
+      <span className="h-3.5 w-[3px] rounded-full" style={{ background: "#D2AE6D" }} />
+      {children}
+    </h2>
+  );
+}
+
 export default async function EraOverview() {
   const data = await getDashboardData();
 
   if (!data) {
     return (
-      <div className="p-6 text-center text-red-500 font-semibold">
+      <div className="p-8 text-center text-navy/70 font-display">
         No se pudieron cargar los datos. Verificá la conexión con Supabase.
       </div>
     );
@@ -34,111 +44,112 @@ export default async function EraOverview() {
     : null;
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="p-7 space-y-7 max-w-[1400px]">
       {/* Header */}
       <div
-        className="rounded-xl px-6 py-5 flex justify-between items-center text-white"
-        style={{ background: "linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%)" }}
+        className="relative overflow-hidden rounded-2xl px-7 py-6 flex justify-between items-center text-white"
+        style={{ background: "linear-gradient(120deg, #232E49 0%, #2C3A5B 45%, #3E4095 100%)" }}
       >
+        {/* Filete dorado superior */}
+        <div className="absolute top-0 left-0 right-0 h-[3px]" style={{ background: "linear-gradient(90deg, #D2AE6D 0%, rgba(210,174,109,0) 70%)" }} />
         <div>
-          <h1 className="text-xl font-black">Dashboard ERA Longevity</h1>
-          <p className="text-white/60 text-sm mt-0.5">
+          <h1 className="text-[22px] font-display font-semibold tracking-tight">Dashboard ERA Longevity</h1>
+          <p className="text-white/55 text-sm mt-1 font-light">
             {semana_label} · {total_profesionales} profesionales
           </p>
           {ultimaSyncLabel && (
-            <p className="text-white/50 text-xs mt-0.5">
+            <p className="text-white/40 text-xs mt-1 font-light">
               Última actualización: {ultimaSyncLabel}
             </p>
           )}
         </div>
-        <div className="bg-white/15 border border-white/30 rounded-full px-4 py-2 text-sm font-semibold">
+        <div
+          className="rounded-full px-4 py-2 text-sm font-medium tracking-wide"
+          style={{ background: "rgba(210,174,109,0.14)", border: "1px solid rgba(210,174,109,0.45)", color: "#E2CC9C" }}
+        >
           {semana_label}
         </div>
       </div>
 
       {/* KPIs */}
       <section>
-        <h2 className="text-xs font-bold uppercase tracking-wide border-l-4 pl-3 mb-3" style={{ borderColor: "#0f3460", color: "#1a1a2e" }}>
-          Resumen de la semana
-        </h2>
+        <SectionTitle>Resumen de la semana</SectionTitle>
         <div className="grid grid-cols-7 gap-3">
           <KpiCard
             valor={kpi.visitas_unicas}
             label="Visitas únicas"
             sub={`vs ${vs.visitas_unicas} sem. ant.`}
             delta={kpi.visitas_unicas - vs.visitas_unicas}
-            color="#0f3460"
+            color="#2C3A5B"
           />
           <KpiCard
             valor={`${kpi.tasa_asistencia}%`}
             label="Tasa asistencia"
             sub={`${vs.tasa_asistencia}% sem. ant.`}
             delta={parseFloat((kpi.tasa_asistencia - vs.tasa_asistencia).toFixed(1))}
-            color="#27ae60"
+            color="#3E4095"
           />
           <KpiCard
             valor={`${kpi.primera_vez} 🆕`}
             label="Primera vez"
             sub={`vs ${vs.primera_vez} sem. ant.`}
             delta={kpi.primera_vez - vs.primera_vez}
-            color="#1967d2"
+            color="#3E4095"
           />
           <KpiCard
             valor={`${kpi.vip} 🧬`}
             label="Pacientes VIP"
-            color="#f39c12"
+            color="#D2AE6D"
           />
           <KpiCard
             valor={kpi.canceladas}
             label="Cancelados"
             sub={`vs ${vs.canceladas} sem. ant.`}
             delta={-(kpi.canceladas - vs.canceladas)}
-            color="#e74c3c"
+            color="#8A93A8"
           />
           <KpiCard
             valor={`${kpi.tasa_pv}%`}
             label="% Primera vez"
             sub={`${kpi.primera_vez} PV / ${kpi.visitas_unicas} visitas`}
-            color="#7c3aed"
+            color="#2C3A5B"
           />
           <KpiCard
             valor={kpi.tasa_recurrencia}
             label="Visitas/paciente mes"
             sub={`${kpi.visitas_mes} visitas · ${kpi.pacientes_unicos_mes} pac.`}
-            color="#0891b2"
+            color="#3E4095"
           />
         </div>
       </section>
 
       {/* Verticales */}
       <section>
-        <h2 className="text-xs font-bold uppercase tracking-wide border-l-4 pl-3 mb-3" style={{ borderColor: "#0f3460", color: "#1a1a2e" }}>
-          Distribución por vertical
-        </h2>
-        <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${distribucion.length}, 1fr)` }}>
+        <SectionTitle>Distribución por vertical</SectionTitle>
+        <div className="grid gap-2.5" style={{ gridTemplateColumns: `repeat(${distribucion.length}, 1fr)` }}>
           {distribucion.map(({ vertical, cantidad, porcentaje, sub }) => {
             const meta = VERTICAL_META[vertical] ?? VERTICAL_META["longevidad"];
             return (
               <div
                 key={vertical}
-                className="rounded-lg p-3 text-center border-t-4"
-                style={{ background: meta.bg, borderColor: meta.color, opacity: cantidad === 0 ? 0.45 : 1 }}
+                className="rounded-xl p-3.5 text-center border border-navy/5 shadow-card"
+                style={{ background: meta.bg, opacity: cantidad === 0 ? 0.5 : 1 }}
               >
-                <div className="text-xs font-bold uppercase tracking-wide mb-1" style={{ color: meta.color }}>
+                <div className="text-[11px] font-medium uppercase tracking-[0.06em] mb-1.5" style={{ color: meta.color }}>
                   {meta.emoji} {meta.label}
                 </div>
-                <div className="text-2xl font-black leading-none" style={{ color: meta.color }}>
+                <div className="text-2xl font-display font-semibold leading-none" style={{ color: meta.color }}>
                   {cantidad}
                 </div>
-                <div className="text-xs mt-1 opacity-80" style={{ color: meta.color }}>
+                <div className="text-[11px] mt-1.5 opacity-70" style={{ color: meta.color }}>
                   {cantidad === 0 ? "sin datos" : `${porcentaje}%`}
                 </div>
                 {sub && sub.length > 0 && (
-                  <div className="mt-2 pt-2 border-t border-black/10 text-left space-y-0.5">
+                  <div className="mt-2.5 pt-2.5 border-t border-navy/10 text-left space-y-1">
                     {sub.map((s) => (
-                      <div key={s.label} className="flex justify-between items-center text-xs pl-2 border-l-2" style={{ borderColor: meta.color, color: meta.color }}>
-                        <span className="opacity-75">{s.label} · {s.profesional}</span>
-                        <span className="font-bold">{s.cantidad}</span>
+                      <div key={s.label} className="flex justify-between items-center text-[11px] pl-2 border-l-2" style={{ borderColor: meta.color, color: meta.color }}>
+                        <span className="opacity-70">{s.label} · {s.profesional}</span>
+                        <span className="font-semibold">{s.cantidad}</span>
                       </div>
                     ))}
                   </div>
@@ -154,12 +165,10 @@ export default async function EraOverview() {
 
       {/* Pacientes de primera vez */}
       <section>
-        <h2 className="text-xs font-bold uppercase tracking-wide border-l-4 pl-3 mb-3" style={{ borderColor: "#0f3460", color: "#1a1a2e" }}>
-          Pacientes de primera vez esta semana
-        </h2>
-        <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+        <SectionTitle>Pacientes de primera vez esta semana</SectionTitle>
+        <div className="bg-white rounded-xl shadow-card border border-navy/5 overflow-hidden">
           {proximas.length === 0 ? (
-            <div className="px-4 py-6 text-sm text-gray-400 text-center">Sin pacientes de primera vez esta semana</div>
+            <div className="px-4 py-7 text-sm text-navy/40 text-center font-light">Sin pacientes de primera vez esta semana</div>
           ) : proximas.map((c) => {
             const meta = VERTICAL_META[c.vertical] ?? VERTICAL_META["longevidad"];
             const dt = new Date(c.fecha_hora);
@@ -169,32 +178,32 @@ export default async function EraOverview() {
             return (
               <div
                 key={c.id}
-                className="px-4 py-3 border-b border-gray-100 last:border-0 hover:bg-gray-50 transition-colors"
+                className="px-4 py-3 border-b border-navy/5 last:border-0 hover:bg-milky/60 transition-colors"
                 style={{ borderLeft: `3px solid ${meta.color}` }}
               >
                 <div className="flex items-center gap-3">
-                  <div className="text-xs font-bold text-gray-400 w-16 shrink-0">
+                  <div className="text-[11px] font-medium text-navy/40 w-16 shrink-0 tabular-nums">
                     {dia}/{mes} {hora}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <div className="text-sm font-semibold text-gray-800 truncate">
+                    <div className="text-sm font-medium text-navy truncate">
                       {c.paciente.nombre_completo}
                       {c.paciente.es_vip && <span className="ml-1">🧬</span>}
                     </div>
                   </div>
-                  <div className="text-xs text-gray-400 italic shrink-0">{c.profesional.nombre}</div>
+                  <div className="text-[11px] text-navy/40 italic shrink-0 font-light">{c.profesional.nombre}</div>
                   <VerticalBadge vertical={c.vertical as Vertical} />
                 </div>
                 {(c.motivo_consulta || c.observaciones) && (
                   <div className="mt-1.5 ml-[76px] space-y-0.5">
                     {c.motivo_consulta && (
-                      <p className="text-xs text-gray-600">
-                        <span className="font-semibold text-gray-500">Motivo: </span>{c.motivo_consulta}
+                      <p className="text-xs text-navy/60">
+                        <span className="font-medium text-navy/45">Motivo: </span>{c.motivo_consulta}
                       </p>
                     )}
                     {c.observaciones && (
-                      <p className="text-xs text-gray-500 italic">
-                        <span className="font-semibold not-italic">Obs: </span>{c.observaciones}
+                      <p className="text-xs text-navy/45 italic">
+                        <span className="font-medium not-italic">Obs: </span>{c.observaciones}
                       </p>
                     )}
                   </div>
@@ -207,11 +216,9 @@ export default async function EraOverview() {
 
       {/* Comparativo */}
       <section>
-        <h2 className="text-xs font-bold uppercase tracking-wide border-l-4 pl-3 mb-3" style={{ borderColor: "#0f3460", color: "#1a1a2e" }}>
-          Comparativo semana actual vs anterior
-        </h2>
-        <div className="bg-white rounded-xl shadow-sm p-4">
-          <div className="grid grid-cols-4 gap-4 pb-2 mb-2 border-b-2 border-gray-200 text-xs font-bold text-gray-400 uppercase">
+        <SectionTitle>Comparativo semana actual vs anterior</SectionTitle>
+        <div className="bg-white rounded-xl shadow-card border border-navy/5 p-5">
+          <div className="grid grid-cols-4 gap-4 pb-2.5 mb-1 border-b border-navy/10 text-[11px] font-medium text-navy/40 uppercase tracking-wide">
             <span>Métrica</span>
             <span className="text-center">Sem. anterior</span>
             <span className="text-center">Sem. actual</span>
@@ -228,11 +235,14 @@ export default async function EraOverview() {
             const diff = n2 - n1;
             const good = pos ? diff >= 0 : diff <= 0;
             return (
-              <div key={label} className="grid grid-cols-4 gap-4 py-2 border-b border-gray-100 last:border-0 text-sm items-center">
-                <span className="text-gray-600">{label}</span>
-                <span className="text-center font-semibold">{s1}</span>
-                <span className="text-center font-semibold">{s2}</span>
-                <span className={`text-right text-xs font-bold ${diff === 0 ? "text-gray-400" : good ? "text-green-600" : "text-red-500"}`}>
+              <div key={label} className="grid grid-cols-4 gap-4 py-2.5 border-b border-navy/5 last:border-0 text-sm items-center">
+                <span className="text-navy/70">{label}</span>
+                <span className="text-center font-medium text-navy/80 tabular-nums">{s1}</span>
+                <span className="text-center font-semibold text-navy tabular-nums">{s2}</span>
+                <span
+                  className="text-right text-xs font-semibold tabular-nums"
+                  style={{ color: diff === 0 ? "#8A93A8" : good ? "var(--signal-up)" : "var(--signal-down)" }}
+                >
                   {diff > 0 ? `▲ +${diff.toFixed(1).replace(".0", "")}` : diff < 0 ? `▼ ${diff.toFixed(1).replace(".0", "")}` : "—"}
                 </span>
               </div>

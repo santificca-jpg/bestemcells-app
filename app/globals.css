@@ -3,16 +3,26 @@
 @tailwind utilities;
 
 :root {
-  --c-lon: #0f3460;
-  --c-dol: #e74c3c;
-  --c-sue: #1a9e5c;
-  --c-est: #2980b9;
-  --c-nut: #e67e22;
-  --c-kin: #8e44ad;
-  --c-ete: #c0392b;
+  /* Paleta de marca ERA Longevity */
+  --era-navy: #2c3a5b; /* Dark Navy — anchor */
+  --era-navy-deep: #232e49;
+  --era-cyan: #3e4095; /* Blue Cyan — primary */
+  --era-gold: #d2ae6d; /* Gold — accent */
+  --era-milky: #f9f6eb; /* Light */
+
+  /* Colores funcionales (señales discretas, no de marca) */
+  --signal-up: #2e8b6b;
+  --signal-down: #c2554e;
 }
 
 body {
-  background: #f0f2f5;
-  color: #1a1a2e;
+  background: var(--era-milky);
+  color: var(--era-navy);
+  font-family: var(--font-body), "Roboto", sans-serif;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+h1, h2, h3, h4, .font-display {
+  font-family: var(--font-display), "Outfit", sans-serif;
 }

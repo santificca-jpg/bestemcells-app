@@ -21,7 +21,7 @@ function BarraHora({ hora, cantidad, max, esPico }: {
           style={{
             width: `${pct}%`,
             background: esPico
-              ? "linear-gradient(90deg, #1967d2, #0f3460)"
+              ? "linear-gradient(90deg, #1967d2, #2C3A5B)"
               : "rgba(15, 52, 96, 0.25)",
           }}
         />
@@ -45,9 +45,9 @@ function TarjetaDia({ dia }: { dia: DiaEmbudos }) {
       {/* Header */}
       <div
         className="px-4 py-3 text-white"
-        style={{ background: "linear-gradient(135deg, #1a1a2e 0%, #0f3460 100%)" }}
+        style={{ background: "linear-gradient(135deg, #232E49 0%, #2C3A5B 100%)" }}
       >
-        <div className="text-base font-black">{dia.dia} {dia.fecha}</div>
+        <div className="text-base font-semibold">{dia.dia} {dia.fecha}</div>
         <div className="text-white/60 text-xs mt-0.5">
           {sinDatos ? "Sin turnos" : `${dia.total_dia} pacientes únicos`}
         </div>
@@ -59,7 +59,7 @@ function TarjetaDia({ dia }: { dia: DiaEmbudos }) {
           <div className="text-xs font-bold text-blue-500 uppercase tracking-wide mb-0.5">
             Franja pico
           </div>
-          <div className="text-lg font-black text-blue-800">
+          <div className="text-lg font-semibold text-blue-800">
             {desde} – {hasta}
           </div>
           <div className="text-xs text-blue-600 font-semibold">
@@ -104,7 +104,7 @@ export default async function EmbudosPage() {
   return (
     <div className="p-6 space-y-6">
       <div>
-        <h1 className="text-lg font-black text-gray-800">Embudos horarios</h1>
+        <h1 className="text-lg font-semibold text-gray-800">Embudos horarios</h1>
         <p className="text-xs text-gray-400 mt-0.5">
           Semana {semana_label} · Pacientes únicos por hora · Franja pico = ventana de 3 horas con mayor concentración
         </p>

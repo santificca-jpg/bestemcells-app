@@ -6,18 +6,25 @@ interface Props {
   color?: string;
 }
 
-export default function KpiCard({ valor, label, sub, delta, color = "#0f3460" }: Props) {
+export default function KpiCard({ valor, label, sub, delta, color = "#2C3A5B" }: Props) {
   return (
-    <div className="bg-white rounded-xl p-4 shadow-sm" style={{ borderTop: `3px solid ${color}` }}>
-      <div className="text-3xl font-black leading-none" style={{ color }}>
+    <div className="bg-white rounded-xl px-4 py-4 shadow-card border border-navy/5 hover:shadow-card-hover transition-shadow">
+      {/* Acento superior fino de marca */}
+      <div className="h-0.5 w-8 rounded-full mb-3" style={{ background: color }} />
+      <div className="text-[28px] leading-none font-display font-semibold" style={{ color }}>
         {valor}
       </div>
-      <div className="text-xs text-gray-500 mt-1 uppercase tracking-wide">{label}</div>
+      <div className="text-[11px] text-navy/50 mt-2 uppercase tracking-[0.08em] font-medium">
+        {label}
+      </div>
       {(sub || delta !== undefined) && (
-        <div className="text-xs mt-1 text-gray-400">
+        <div className="text-[11px] mt-1 text-navy/40">
           {delta !== undefined && delta !== 0 && (
-            <span className={delta > 0 ? "text-green-600 font-bold" : "text-red-500 font-bold"}>
-              {delta > 0 ? "▲" : "▼"} {Math.abs(delta)}{" "}
+            <span
+              className="font-semibold mr-1"
+              style={{ color: delta > 0 ? "var(--signal-up)" : "var(--signal-down)" }}
+            >
+              {delta > 0 ? "▲" : "▼"} {Math.abs(delta)}
             </span>
           )}
           {sub}
