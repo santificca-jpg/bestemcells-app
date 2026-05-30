@@ -466,7 +466,17 @@ export type ProfesionalPerf = {
 export type ProfesionalesData = {
   semana_label: string;
   profesionales: ProfesionalPerf[];
+  // % de uso de los 4 consultorios médicos (10 hs/día × 5 días = 200 hs/semana).
+  // Numerador: minutos de citas asistidas en consultorio (excluye estudios y sueroterapia,
+  // que no usan consultorio médico).
+  ocupacion_consultorios_pct: number;
 };
+
+// Reglas de negocio del consultorio médico:
+// 4 consultorios, abren 10 hs/día (9 a 19), 5 días hábiles.
+const HORAS_CONSULTORIO_SEMANAL = 4 * 10 * 5; // 200 h
+// Verticales que no se hacen en consultorio médico (no cuentan en este KPI).
+const VERTICALES_FUERA_CONSULTORIO: Vertical[] = ["estudios", "sueroterapia"];
 
 export async function getProfesionalesData(): Promise<ProfesionalesData | null> {
   const supabase = createClient(
@@ -521,10 +531,22 @@ export async function getProfesionalesData(): Promise<ProfesionalesData | null> 
   };
   const byNombre = new Map<string, Entry>();
 
+  // KPI ocupación consultorios: cada cita asistida en consultorio cuenta como 1 hora fija,
+  // aunque DriCloud la registre como 30 min (en la práctica el consultorio se bloquea 1 hora).
+  let citasConsultorio = 0;
+
   for (const r of rows as any[]) {
     const profId = r.profesional_id as string;
     const nombre = r.era_professionals?.nombre as string | undefined;
     if (!profId || !nombre) continue;
+    // Excluir técnicas de sueroterapia (Fedoto, Tucker, Montero) — no son profesionales médicos.
+    if (esTecnico(nombre)) continue;
+
+    const verticalRow = toVertical(r.vertical_calculada);
+    const asistida = r.estado !== "cancelada" && r.estado !== "no-show";
+    if (asistida && !VERTICALES_FUERA_CONSULTORIO.includes(verticalRow)) {
+      citasConsultorio++;
+    }
 
     let e = byNombre.get(nombre);
     if (!e) {
@@ -601,7 +623,10 @@ export async function getProfesionalesData(): Promise<ProfesionalesData | null> 
     })
     .sort((a, b) => b.asistidos - a.asistidos);
 
-  return { semana_label: semanaLabel, profesionales };
+  // Cada cita asistida en consultorio = 1 hora ocupada.
+  const ocupacionConsultoriosPct = Math.round((citasConsultorio / HORAS_CONSULTORIO_SEMANAL) * 100);
+
+  return { semana_label: semanaLabel, profesionales, ocupacion_consultorios_pct: ocupacionConsultoriosPct };
 }
 
 // ─── PROFESIONAL DETAIL ──────────────────────────────────────────────────────

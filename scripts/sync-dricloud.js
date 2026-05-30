@@ -350,55 +350,52 @@ async function upsertPaciente(nombreRaw, fechaIso) {
   const esVip      = nombreRaw.includes("🧬");
   const dricloudId = nombreRaw.toLowerCase().replace(/[^a-záéíóúñü0-9]/g, "_");
 
-  const { data: existing } = await supabase
-    .from("era_patients")
-    .select("id, primera_visita_fecha, es_vip, es_historico")
-    .eq("dricloud_id", dricloudId)
-    .single();
-
-  if (existing) {
-    const updates = {};
-
-    // Actualizar primera_visita_fecha si esta cita es anterior
-    const fechaCita   = new Date(fechaIso);
-    const fechaActual = existing.primera_visita_fecha
-      ? new Date(existing.primera_visita_fecha)
-      : null;
-    let primeraVisitaFecha = existing.primera_visita_fecha;
-    if (!fechaActual || fechaCita < fechaActual) {
-      updates.primera_visita_fecha = apptDate;
-      primeraVisitaFecha = apptDate;
-    }
-
-    // Marcar VIP si el emoji aparece en el nombre
-    if (esVip && !existing.es_vip) updates.es_vip = true;
-
-    if (Object.keys(updates).length > 0) {
-      await supabase.from("era_patients").update(updates).eq("id", existing.id);
-    }
-
-    return { id: existing.id, primeraVisitaFecha, esHistorico: existing.es_historico ?? false };
-  }
-
-  // Separar nombre / apellidos
+  // Separar nombre / apellidos para el nombre_completo legible
   const parts        = nombreRaw.split(",").map((s) => s.trim());
   const apellidos    = parts[0] || "";
   const nombre       = parts[1] || "";
   const nombreCompleto = nombre ? `${nombre} ${apellidos}` : apellidos;
 
-  const { data: inserted, error } = await supabase
+  // Insertar si no existe; si ya existe, lo ignora silenciosamente.
+  // Evita el bug previo donde SELECT+INSERT generaba duplicate key cuando el SELECT
+  // no encontraba el registro (por algún motivo del cliente Supabase con ciertos ids).
+  const { error: errUpsert } = await supabase
     .from("era_patients")
-    .insert({
-      dricloud_id:          dricloudId,
-      nombre_completo:      nombreCompleto,
-      primera_visita_fecha: apptDate,
-      es_vip:               esVip,
-    })
-    .select("id")
-    .single();
+    .upsert(
+      {
+        dricloud_id:          dricloudId,
+        nombre_completo:      nombreCompleto,
+        primera_visita_fecha: apptDate,
+        es_vip:               esVip,
+      },
+      { onConflict: "dricloud_id", ignoreDuplicates: true }
+    );
+  if (errUpsert) throw new Error(`Error upserting paciente ${nombreCompleto}: ${errUpsert.message}`);
 
-  if (error) throw new Error(`Error insertando paciente ${nombreCompleto}: ${error.message}`);
-  return { id: inserted.id, primeraVisitaFecha: apptDate, esHistorico: false };
+  // Traer la fila (recién creada o pre-existente) para devolver el id y aplicar updates condicionales.
+  const { data: existing, error: errSel } = await supabase
+    .from("era_patients")
+    .select("id, primera_visita_fecha, es_vip, es_historico")
+    .eq("dricloud_id", dricloudId)
+    .maybeSingle();
+  if (errSel || !existing) throw new Error(`No se pudo recuperar paciente ${nombreCompleto}: ${errSel?.message ?? "no encontrado"}`);
+
+  // Actualizaciones condicionales
+  const updates = {};
+  const fechaCita = new Date(fechaIso);
+  const fechaActual = existing.primera_visita_fecha ? new Date(existing.primera_visita_fecha) : null;
+  let primeraVisitaFecha = existing.primera_visita_fecha;
+  if (!fechaActual || fechaCita < fechaActual) {
+    updates.primera_visita_fecha = apptDate;
+    primeraVisitaFecha = apptDate;
+  }
+  if (esVip && !existing.es_vip) updates.es_vip = true;
+
+  if (Object.keys(updates).length > 0) {
+    await supabase.from("era_patients").update(updates).eq("id", existing.id);
+  }
+
+  return { id: existing.id, primeraVisitaFecha, esHistorico: existing.es_historico ?? false };
 }
 
 async function upsertCita(cpaId, pacienteId, profesionalId, data) {
@@ -538,6 +535,13 @@ async function login(page) {
       // Sumamos los minutos de todas las agendas del mismo profesional (varios slot_id).
       const fechaIso = date.toISOString().split("T")[0];
       const minutosPorProf = {}; // profesional_uuid → minutos
+      // Inicializar a 0 todos los profesionales que tuvieron agenda configurada ese día.
+      // Esto permite distinguir "agenda 100% ocupada" (fila con 0 min libres) de
+      // "sin agenda configurada" (sin fila → ocupación null en el dashboard).
+      for (const profUuid of Object.values(profIdMap)) {
+        if (!profUuid) continue;
+        if (minutosPorProf[profUuid] === undefined) minutosPorProf[profUuid] = 0;
+      }
       for (const [slotId, minutos] of Object.entries(freeMinutesBySlot)) {
         const profUuid = profIdMap[slotId];
         if (!profUuid) continue;
