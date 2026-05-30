@@ -157,7 +157,12 @@ async function fetchCitaDetails(page, cpaIds) {
 function getLunesViernes() {
   const now = new Date();
   const day = now.getDay(); // 0=dom, 1=lun, ..., 6=sab
-  const diffToMonday = day === 0 ? -6 : 1 - day;
+  // Sáb y dom: adelantamos a la semana entrante para ir viendo cómo viene la
+  // próxima semana. Lun–vie: semana en curso.
+  let diffToMonday;
+  if (day === 6) diffToMonday = 2;        // sábado → lunes siguiente
+  else if (day === 0) diffToMonday = 1;   // domingo → lunes siguiente
+  else diffToMonday = 1 - day;            // lunes a viernes → lunes de esta semana
   const lunes = new Date(now);
   lunes.setDate(now.getDate() + diffToMonday);
   const viernes = new Date(lunes);

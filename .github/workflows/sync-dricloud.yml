@@ -9,6 +9,11 @@ on:
     - cron: '30 16 * * 1-5'
     # 20:00 local → 23:00 UTC  (cierre del día)
     - cron: '0 23 * * 1-5'
+    # Fin de semana: previsualizar la semana entrante (sáb y dom)
+    # 09:00 local → 12:00 UTC
+    - cron: '0 12 * * 6,0'
+    # 19:00 local → 22:00 UTC
+    - cron: '0 22 * * 6,0'
   workflow_dispatch:
     inputs:
       fecha_inicio:
