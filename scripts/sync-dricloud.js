@@ -63,6 +63,35 @@ function especialidadToVertical(especialidad) {
 // ─── Mapeo de TipoCita → vertical ────────────────────────────────────────────
 // TipoCita tiene prioridad. Si no hay match, se usa la especialidad del profesional.
 
+// ─── Reglas de "primera vez" ─────────────────────────────────────────────────
+// Una cita es primera vez si y SOLO si:
+//   1. El TipoCita en DriCloud es uno de los "Primera consulta ...".
+//   2. El paciente NO está marcado como histórico (es_historico = false).
+//   3. El profesional no es derivación interna / técnico (Camilli, Cornejo, Hiese,
+//      Ottonello, Sabaté, Fedoto, Tucker, Montero).
+//   4. La vertical no es "estudios" (PIC, ADN test, OligoScan nunca son debut).
+
+const TIPOS_CITA_PRIMERA_VEZ = new Set([
+  "primera consulta - dolor",
+  "primera consulta - longevidad",
+  "primera consulta - estetica",
+  "primera consulta - estética",
+  "primera consulta online",
+]);
+
+const PROFESIONALES_EXCLUIDOS_PV = [
+  "camilli", "cornejo", "hiese", "ottonello", "sabate", "sabaté",
+  "fedoto", "tucker", "montero",
+];
+
+function computeEsPrimeraVez({ tipoCita, esHistorico, profNombreLower, vertical }) {
+  if (esHistorico) return false;
+  if (vertical === "estudios") return false;
+  if (PROFESIONALES_EXCLUIDOS_PV.some((e) => profNombreLower.includes(e))) return false;
+  if (!tipoCita) return false;
+  return TIPOS_CITA_PRIMERA_VEZ.has(tipoCita.toLowerCase().trim());
+}
+
 function tipoCitaToVertical(tipoCita) {
   if (!tipoCita) return null;
   const t = tipoCita.toLowerCase().trim();
@@ -221,6 +250,7 @@ function getDatesInRange(start, end) {
 function parsePlanningHTML(html, date) {
   const appointments = [];
   const doctorsMap = {}; // slot_id → { nombre, especialidad }
+  const freeMinutesBySlot = {}; // slot_id → minutos abiertos (verde, "cita free")
 
   // Construir mapa de doctores desde todos los bloques doctorAsignado
   const doctorBlockRegex = /<div class="doctorAsignado dr(\d+)"[^>]*>[\s\S]*?<h2[^>]*>\s*([\s\S]*?)\s*<\/h2>/g;
@@ -238,6 +268,16 @@ function parsePlanningHTML(html, date) {
     const especialidad   = nameMatch[2] ? nameMatch[2].replace(/^\d+\.\s*/, "").trim() : "";
 
     doctorsMap[slotId] = { nombre: nombreCompleto, especialidad };
+  }
+
+  // Extraer celdas verdes (cita free) = minutos con agenda abierta libre.
+  // Excluye "closedHours" (agenda cerrada / asuntos propios) y celdas ocupadas.
+  const freeCellRegex = /<li\s+[^>]*?class="cita free[^"]*"[^>]*?data-width="(\d+)"[^>]*?onclick="AltaEditCita\('0',\s*'(\d+)'/g;
+  let freeMatch;
+  while ((freeMatch = freeCellRegex.exec(html)) !== null) {
+    const minutos = parseInt(freeMatch[1], 10);
+    const slotId  = freeMatch[2];
+    freeMinutesBySlot[slotId] = (freeMinutesBySlot[slotId] ?? 0) + minutos;
   }
 
   // 2. Extraer todos los turnos ocupados del HTML completo
@@ -275,7 +315,7 @@ function parsePlanningHTML(html, date) {
     });
   }
 
-  return { appointments, doctorsMap };
+  return { appointments, doctorsMap, freeMinutesBySlot };
 }
 
 // ─── Supabase: upsert helpers ────────────────────────────────────────────────
@@ -312,7 +352,7 @@ async function upsertPaciente(nombreRaw, fechaIso) {
 
   const { data: existing } = await supabase
     .from("era_patients")
-    .select("id, primera_visita_fecha, es_vip")
+    .select("id, primera_visita_fecha, es_vip, es_historico")
     .eq("dricloud_id", dricloudId)
     .single();
 
@@ -337,7 +377,7 @@ async function upsertPaciente(nombreRaw, fechaIso) {
       await supabase.from("era_patients").update(updates).eq("id", existing.id);
     }
 
-    return { id: existing.id, primeraVisitaFecha };
+    return { id: existing.id, primeraVisitaFecha, esHistorico: existing.es_historico ?? false };
   }
 
   // Separar nombre / apellidos
@@ -358,7 +398,7 @@ async function upsertPaciente(nombreRaw, fechaIso) {
     .single();
 
   if (error) throw new Error(`Error insertando paciente ${nombreCompleto}: ${error.message}`);
-  return { id: inserted.id, primeraVisitaFecha: apptDate };
+  return { id: inserted.id, primeraVisitaFecha: apptDate, esHistorico: false };
 }
 
 async function upsertCita(cpaId, pacienteId, profesionalId, data) {
@@ -373,6 +413,7 @@ async function upsertCita(cpaId, pacienteId, profesionalId, data) {
         duracion_min:       data.duracion_min,
         estado:             data.estado,
         vertical_calculada: data.vertical,
+        tipo_cita:          data.tipoCita ?? null,
         es_primera_vez:     data.es_primera_vez,
         motivo_consulta:    data.motivoConsulta ?? null,
         observaciones:      data.observaciones ?? null,
@@ -396,7 +437,7 @@ async function scrapeDia(page, date) {
   await page.waitForTimeout(2000);
 
   const html = await page.content();
-  const { appointments, doctorsMap } = parsePlanningHTML(html, date);
+  const { appointments, doctorsMap, freeMinutesBySlot } = parsePlanningHTML(html, date);
 
   // Consultar TipoCita para todos los turnos — es la fuente de verdad principal.
   // La sala/despacho no se usa para clasificar verticales.
@@ -410,12 +451,13 @@ async function scrapeDia(page, date) {
       const details = detailsMap[appt.cpa_id] ?? {};
       const override = tipoCitaToVertical(details.tipoCita);
       if (override) appt.tipoCitaVertical = override;
+      appt.tipoCita       = details.tipoCita ?? null;
       appt.motivoConsulta = details.motivoConsulta ?? null;
       appt.observaciones  = details.observaciones ?? null;
     }
   }
 
-  return { appointments, doctorsMap };
+  return { appointments, doctorsMap, freeMinutesBySlot };
 }
 
 async function login(page) {
@@ -465,6 +507,7 @@ async function login(page) {
 
   let totalInserted = 0;
   let totalErrors   = 0;
+  let totalDeleted  = 0;
 
   // Registrar inicio del sync en bitácora
   const { data: syncLogRow } = await supabase
@@ -478,7 +521,7 @@ async function login(page) {
     await login(page);
 
     for (const date of dates) {
-      const { appointments, doctorsMap } = await scrapeDia(page, date);
+      const { appointments, doctorsMap, freeMinutesBySlot } = await scrapeDia(page, date);
       console.log(`  → ${appointments.length} turno(s) encontrado(s)`);
 
       // Upsert profesionales del día
@@ -491,10 +534,29 @@ async function login(page) {
         }
       }
 
+      // Upsert minutos abiertos por profesional para este día.
+      // Sumamos los minutos de todas las agendas del mismo profesional (varios slot_id).
+      const fechaIso = date.toISOString().split("T")[0];
+      const minutosPorProf = {}; // profesional_uuid → minutos
+      for (const [slotId, minutos] of Object.entries(freeMinutesBySlot)) {
+        const profUuid = profIdMap[slotId];
+        if (!profUuid) continue;
+        minutosPorProf[profUuid] = (minutosPorProf[profUuid] ?? 0) + minutos;
+      }
+      for (const [profUuid, minutos] of Object.entries(minutosPorProf)) {
+        const { error: errOpen } = await supabase
+          .from("era_open_minutes")
+          .upsert(
+            { profesional_id: profUuid, fecha: fechaIso, minutos_libres: minutos, updated_at: new Date().toISOString() },
+            { onConflict: "profesional_id,fecha" }
+          );
+        if (errOpen) console.error(`  ⚠️  era_open_minutes ${profUuid} ${fechaIso}: ${errOpen.message}`);
+      }
+
       // Upsert citas
       for (const appt of appointments) {
         try {
-          const { id: pacienteId, primeraVisitaFecha } = await upsertPaciente(appt.nombre_paciente_raw, appt.fecha_hora);
+          const { id: pacienteId, esHistorico } = await upsertPaciente(appt.nombre_paciente_raw, appt.fecha_hora);
           const profesionalId = profIdMap[appt.slot_id];
 
           if (!profesionalId) {
@@ -503,16 +565,24 @@ async function login(page) {
             continue;
           }
 
-          const EXCLUIR_PV = ["camilli", "cornejo", "hiese", "ottonello", "sabate", "sabaté"];
+          const vertical = appt.tipoCitaVertical
+            ?? especialidadToVertical(doctorsMap[appt.slot_id]?.especialidad ?? "")
+            ?? "longevidad";
+
           const profNombreLower = (doctorsMap[appt.slot_id]?.nombre ?? "").toLowerCase();
-          const esExcluidoPV = EXCLUIR_PV.some((e) => profNombreLower.includes(e));
-          const esPrimeraVez = primeraVisitaFecha === appt.fecha_hora.split("T")[0] && !esExcluidoPV;
+          const esPrimeraVez = computeEsPrimeraVez({
+            tipoCita: appt.tipoCita,
+            esHistorico,
+            profNombreLower,
+            vertical,
+          });
 
           await upsertCita(appt.cpa_id, pacienteId, profesionalId, {
             fecha_hora:      appt.fecha_hora,
             duracion_min:    appt.duracion_min,
             estado:          appt.estado,
-            vertical:        appt.tipoCitaVertical ?? especialidadToVertical(doctorsMap[appt.slot_id]?.especialidad ?? "") ?? "longevidad",
+            vertical,
+            tipoCita:        appt.tipoCita ?? null,
             es_primera_vez:  esPrimeraVez,
             motivoConsulta:  appt.motivoConsulta ?? null,
             observaciones:   appt.observaciones ?? null,
@@ -524,10 +594,44 @@ async function login(page) {
           totalErrors++;
         }
       }
+
+      // Limpiar turnos fantasma: los que están en la base para este día pero ya
+      // NO figuran en la agenda de DriCloud (turnos eliminados, no cancelados).
+      // Guarda de seguridad: solo limpiamos si la página cargó bien (hay agendas).
+      // Si no hay doctorsMap, asumimos que el scrape falló y no borramos nada.
+      if (Object.keys(doctorsMap).length > 0) {
+        const cpaIdsVivos = appointments
+          .filter((a) => a.cpa_id !== "0")
+          .map((a) => a.cpa_id);
+
+        const nextDay = new Date(`${fechaIso}T00:00:00Z`);
+        nextDay.setUTCDate(nextDay.getUTCDate() + 1);
+        const nextIso = nextDay.toISOString().split("T")[0];
+
+        let delQuery = supabase
+          .from("era_appointments")
+          .delete()
+          .gte("fecha_hora", `${fechaIso}T00:00:00`)
+          .lt("fecha_hora", `${nextIso}T00:00:00`);
+
+        // Conservar los turnos que sí siguen en la agenda.
+        if (cpaIdsVivos.length > 0) {
+          delQuery = delQuery.not("dricloud_id", "in", `(${cpaIdsVivos.join(",")})`);
+        }
+
+        const { data: borrados, error: errDel } = await delQuery.select("dricloud_id");
+        if (errDel) {
+          console.error(`  ⚠️  Limpieza ${fechaIso}: ${errDel.message}`);
+        } else if (borrados && borrados.length > 0) {
+          totalDeleted += borrados.length;
+          console.log(`  🗑️  ${borrados.length} turno(s) eliminado(s) de la agenda → borrados de la base`);
+        }
+      }
     }
 
     console.log(`\n✅ Sync completado`);
     console.log(`   Turnos sincronizados: ${totalInserted}`);
+    if (totalDeleted > 0) console.log(`   Turnos eliminados (limpieza): ${totalDeleted}`);
     if (totalErrors > 0) console.log(`   Errores: ${totalErrors}`);
 
     if (syncLogId) {
