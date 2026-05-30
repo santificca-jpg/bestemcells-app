@@ -1,27 +1,90 @@
 import { getEmbudosData } from "@/lib/era/dashboard-data";
-import type { EmbudoHorario } from "@/lib/era/dashboard-data";
+import type { DiaEmbudos, HoraCount } from "@/lib/era/dashboard-data";
 
 export const revalidate = 300;
 
-const DIAS_COLS = ["lunes", "martes", "miercoles", "jueves", "viernes"] as const;
-const DIAS_LABEL = ["Lun", "Mar", "Mié", "Jue", "Vie"];
-const PICO_UMBRAL = 12;
-
-function HeatCell({ value, maxTotal }: { value: number; maxTotal: number }) {
-  const intensity = maxTotal > 0 ? value / maxTotal : 0;
-  const bg = value === 0
-    ? "#f9fafb"
-    : `rgba(15, 52, 96, ${0.15 + intensity * 0.85})`;
-  const textColor = intensity > 0.5 ? "white" : "#374151";
+function BarraHora({ hora, cantidad, max, esPico }: {
+  hora: string;
+  cantidad: number;
+  max: number;
+  esPico: boolean;
+}) {
+  const pct = max > 0 ? Math.round((cantidad / max) * 100) : 0;
   return (
-    <td className="p-0">
-      <div
-        className="h-9 flex items-center justify-center text-xs font-bold rounded-sm m-0.5 transition-all"
-        style={{ background: bg, color: textColor, minWidth: "2.5rem" }}
-      >
-        {value > 0 ? value : ""}
+    <div className={`flex items-center gap-2 py-0.5 rounded px-1 ${esPico ? "bg-blue-50" : ""}`}>
+      <span className={`text-xs w-12 shrink-0 font-mono ${esPico ? "text-blue-700 font-bold" : "text-gray-400"}`}>
+        {hora}
+      </span>
+      <div className="flex-1 h-4 bg-gray-100 rounded-full overflow-hidden">
+        <div
+          className="h-full rounded-full transition-all"
+          style={{
+            width: `${pct}%`,
+            background: esPico
+              ? "linear-gradient(90deg, #1967d2, #0f3460)"
+              : "rgba(15, 52, 96, 0.25)",
+          }}
+        />
       </div>
-    </td>
+      <span className={`text-xs w-5 text-right shrink-0 font-bold ${esPico ? "text-blue-700" : cantidad === 0 ? "text-gray-200" : "text-gray-500"}`}>
+        {cantidad > 0 ? cantidad : ""}
+      </span>
+    </div>
+  );
+}
+
+function TarjetaDia({ dia }: { dia: DiaEmbudos }) {
+  const max = Math.max(...dia.horas.map((h) => h.cantidad), 1);
+  const { desde, hasta, total } = dia.franja_pico;
+  const picoDesdeH = parseInt(desde.substring(0, 2));
+  const picoHastaH = parseInt(hasta.substring(0, 2));
+  const sinDatos = dia.total_dia === 0;
+
+  return (
+    <div className="bg-white rounded-xl shadow-sm overflow-hidden flex flex-col">
+      {/* Header */}
+      <div
+        className="px-4 py-3 text-white"
+        style={{ background: "linear-gradient(135deg, #1a1a2e 0%, #0f3460 100%)" }}
+      >
+        <div className="text-base font-black">{dia.dia} {dia.fecha}</div>
+        <div className="text-white/60 text-xs mt-0.5">
+          {sinDatos ? "Sin turnos" : `${dia.total_dia} pacientes únicos`}
+        </div>
+      </div>
+
+      {/* Franja pico */}
+      {!sinDatos && (
+        <div className="px-4 py-3 bg-blue-50 border-b border-blue-100">
+          <div className="text-xs font-bold text-blue-500 uppercase tracking-wide mb-0.5">
+            Franja pico
+          </div>
+          <div className="text-lg font-black text-blue-800">
+            {desde} – {hasta}
+          </div>
+          <div className="text-xs text-blue-600 font-semibold">
+            {total} paciente{total !== 1 ? "s" : ""} en esas 3 horas
+          </div>
+        </div>
+      )}
+
+      {/* Barras por hora */}
+      <div className="px-3 py-2 flex flex-col gap-0.5 flex-1">
+        {dia.horas.map((h: HoraCount) => {
+          const hNum = parseInt(h.hora.substring(0, 2));
+          const esPico = hNum >= picoDesdeH && hNum < picoHastaH;
+          return (
+            <BarraHora
+              key={h.hora}
+              hora={h.hora}
+              cantidad={h.cantidad}
+              max={max}
+              esPico={!sinDatos && esPico}
+            />
+          );
+        })}
+      </div>
+    </div>
   );
 }
 
@@ -36,79 +99,21 @@ export default async function EmbudosPage() {
     );
   }
 
-  const { embudos, semana_label } = data;
-  const maxTotal = Math.max(...embudos.map((h) => h.total), 1);
-  const picos = embudos.filter((h) => h.total >= PICO_UMBRAL);
+  const { dias, semana_label } = data;
 
   return (
     <div className="p-6 space-y-6">
       <div>
         <h1 className="text-lg font-black text-gray-800">Embudos horarios</h1>
-        <p className="text-xs text-gray-400 mt-0.5">Semana {semana_label} · Intensidad = cantidad de turnos simultáneos</p>
+        <p className="text-xs text-gray-400 mt-0.5">
+          Semana {semana_label} · Pacientes únicos por hora · Franja pico = ventana de 3 horas con mayor concentración
+        </p>
       </div>
 
-      {picos.length > 0 && (
-        <div className="space-y-2">
-          <h2 className="text-xs font-bold text-gray-500 uppercase tracking-wide">Franjas con mayor demanda (&gt;= {PICO_UMBRAL} turnos)</h2>
-          {picos.map((h: EmbudoHorario) => (
-            <div key={h.hora} className="flex items-center gap-3 bg-red-50 border border-red-200 rounded-xl px-4 py-3">
-              <span className="text-red-600 font-black text-lg w-14">{h.hora}</span>
-              <div className="flex-1">
-                <div className="text-sm font-semibold text-red-700">{h.total} turnos simultáneos</div>
-                <div className="text-xs text-red-400 mt-0.5">
-                  {DIAS_LABEL.map((d, i) => {
-                    const v = h[DIAS_COLS[i]];
-                    return v > 0 ? `${d}: ${v}` : null;
-                  }).filter(Boolean).join(" · ")}
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-
-      <div className="bg-white rounded-xl shadow-sm p-4 overflow-x-auto">
-        <h2 className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-3">Mapa de calor — turnos por hora y día</h2>
-        <table className="w-full border-separate border-spacing-0">
-          <thead>
-            <tr>
-              <th className="text-left px-2 py-1 text-xs text-gray-400 font-bold uppercase w-16">Hora</th>
-              {DIAS_LABEL.map((d) => (
-                <th key={d} className="text-center text-xs text-gray-500 font-bold uppercase pb-1">{d}</th>
-              ))}
-              <th className="text-center text-xs text-gray-500 font-bold uppercase pb-1">Total</th>
-            </tr>
-          </thead>
-          <tbody>
-            {embudos.map((h: EmbudoHorario) => (
-              <tr key={h.hora}>
-                <td className="text-xs font-bold text-gray-400 px-2 py-0">{h.hora}</td>
-                {DIAS_COLS.map((d) => (
-                  <HeatCell key={d} value={h[d]} maxTotal={maxTotal} />
-                ))}
-                <td className="p-0">
-                  <div
-                    className="h-9 flex items-center justify-center text-xs font-black rounded-sm m-0.5"
-                    style={{
-                      background: h.total >= PICO_UMBRAL ? "#fde8e8" : "#f3f4f6",
-                      color: h.total >= PICO_UMBRAL ? "#c0392b" : "#6b7280",
-                    }}
-                  >
-                    {h.total > 0 ? h.total : ""}
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      <div className="flex items-center gap-3 text-xs text-gray-400">
-        <span>Menos turnos</span>
-        {[0.1, 0.3, 0.5, 0.7, 0.9].map((i) => (
-          <div key={i} className="w-8 h-4 rounded" style={{ background: `rgba(15, 52, 96, ${0.15 + i * 0.85})` }} />
+      <div className="grid grid-cols-5 gap-4">
+        {dias.map((dia) => (
+          <TarjetaDia key={dia.dia} dia={dia} />
         ))}
-        <span>Más turnos</span>
       </div>
     </div>
   );

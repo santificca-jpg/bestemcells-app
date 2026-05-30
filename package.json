@@ -15,7 +15,8 @@
     "next": "14.2.5",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "recharts": "^2.12.0"
+    "recharts": "^2.12.0",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@supabase/supabase-js": "^2.105.3",
@@ -29,6 +30,7 @@
     "playwright": "^1.59.1",
     "postcss": "^8.4.33",
     "tailwindcss": "^3.4.1",
+    "tweetsodium": "^0.0.4",
     "typescript": "^5.3.3"
   }
 }

@@ -15,14 +15,13 @@ export default async function ProfesionalesPage() {
   }
 
   const profs = data.profesionales;
-  const totales = {
-    turnos: profs.reduce((s, p) => s + p.turnos, 0),
-    asistencia: profs.length > 0
-      ? (profs.reduce((s, p) => s + p.tasa_asistencia, 0) / profs.length).toFixed(1)
-      : "0",
-    pv: profs.reduce((s, p) => s + p.primera_vez, 0),
-    cancelados: profs.reduce((s, p) => s + p.cancelados + p.no_shows, 0),
-  };
+  const totalAsistidos = profs.reduce((s, p) => s + p.asistidos, 0);
+  const totalTurnos = profs.reduce((s, p) => s + p.turnos, 0);
+  const asistenciaProm = totalTurnos > 0 ? Math.round((totalAsistidos / totalTurnos) * 1000) / 10 : 0;
+  const profsConOcup = profs.filter((p) => p.ocupacion_pct !== null);
+  const ocupacionProm = profsConOcup.length > 0
+    ? Math.round(profsConOcup.reduce((s, p) => s + (p.ocupacion_pct ?? 0), 0) / profsConOcup.length)
+    : null;
 
   return (
     <div className="p-6 space-y-4">
@@ -31,12 +30,11 @@ export default async function ProfesionalesPage() {
 
       <ProfesionalesTable profesionales={profs} />
 
-      <div className="grid grid-cols-4 gap-3">
+      <div className="grid grid-cols-3 gap-3">
         {[
-          { label: "Total turnos", valor: totales.turnos },
-          { label: "Asistencia prom.", valor: `${totales.asistencia}%` },
-          { label: "PV total", valor: totales.pv },
-          { label: "Cancelados total", valor: totales.cancelados },
+          { label: "Total asistidos", valor: totalAsistidos },
+          { label: "Asistencia prom.", valor: `${asistenciaProm}%` },
+          { label: "Ocupación prom.", valor: ocupacionProm === null ? "—" : `${ocupacionProm}%` },
         ].map(({ label, valor }) => (
           <div key={label} className="bg-white rounded-xl p-4 shadow-sm text-center">
             <div className="text-2xl font-black" style={{ color: "#0f3460" }}>{valor}</div>

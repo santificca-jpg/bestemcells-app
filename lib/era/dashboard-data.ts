@@ -41,7 +41,8 @@ type RawAppt = {
   observaciones: string | null;
   motivo_consulta: string | null;
   era_professionals: { nombre: string } | null;
-  era_patients: { nombre_completo: string; es_vip: boolean; primera_visita_fecha: string | null } | null;
+  es_primera_vez: boolean | null;
+  era_patients: { nombre_completo: string; es_vip: boolean } | null;
 };
 
 type RawApptMin = {
@@ -49,21 +50,13 @@ type RawApptMin = {
   fecha_hora: string;
   estado: string;
   vertical_calculada: string | null;
-  era_patients: { es_vip: boolean; nombre_completo: string; primera_visita_fecha: string | null } | null;
+  es_primera_vez: boolean | null;
+  era_patients: { es_vip: boolean; nombre_completo: string } | null;
   era_professionals: { nombre: string } | null;
 };
 
-// Excluidos de "primera vez": derivaciones internas + cardiología + endocrinología
-// (los pacientes de esas especialidades ya son pacientes de ERA, no cuentan como debut)
-const EXCLUIR_PV = ["camilli", "cornejo", "hiese", "ottonello", "sabate", "sabaté"];
-
 // Técnicas de sueroterapia: no cuentan como visitas médicas
 const EXCLUIR_TECNICOS = ["fedoto", "tucker", "montero"] as const;
-
-function esProfExcluido(nombre: string): boolean {
-  const lower = nombre.toLowerCase();
-  return EXCLUIR_PV.some((e) => lower.includes(e));
-}
 
 function esTecnico(nombre: string): boolean {
   const lower = nombre.toLowerCase();
@@ -90,17 +83,10 @@ function computeKpis(rows: RawApptMin[]) {
       .map((r) => r.paciente_id)
   );
 
-  // Primera vez: fecha del turno coincide con la primera visita del paciente,
-  // excluyendo turnos de Camilli, Cornejo y Hiese (derivaciones internas)
+  // Primera vez: ya lo calcula el sync (es_primera_vez en DB) según TipoCita,
+  // pacientes históricos y profesionales/verticales excluidos.
   const primeraVezPatients = new Set(
-    activos
-      .filter((r) => {
-        const apptDate = r.fecha_hora.substring(0, 10);
-        const pvFecha = r.era_patients?.primera_visita_fecha;
-        const profNombre = r.era_professionals?.nombre ?? "";
-        return pvFecha === apptDate && !esProfExcluido(profNombre);
-      })
-      .map((r) => r.paciente_id)
+    activos.filter((r) => r.es_primera_vez === true).map((r) => r.paciente_id)
   );
   const primeraVez = primeraVezPatients.size;
 
@@ -261,9 +247,9 @@ export async function getDashboardData(): Promise<DashboardData | null> {
   const { data: currentRows, error } = await supabase
     .from("era_appointments")
     .select(`
-      id, paciente_id, fecha_hora, duracion_min, estado, vertical_calculada, observaciones, motivo_consulta,
+      id, paciente_id, fecha_hora, duracion_min, estado, vertical_calculada, es_primera_vez, observaciones, motivo_consulta,
       era_professionals!profesional_id(nombre),
-      era_patients!paciente_id(nombre_completo, es_vip, primera_visita_fecha)
+      era_patients!paciente_id(nombre_completo, es_vip)
     `)
     .gte("fecha_hora", monday.toISOString())
     .lte("fecha_hora", friday.toISOString())
@@ -274,8 +260,8 @@ export async function getDashboardData(): Promise<DashboardData | null> {
   const { data: prevRows } = await supabase
     .from("era_appointments")
     .select(`
-      paciente_id, fecha_hora, estado, vertical_calculada,
-      era_patients!paciente_id(es_vip, nombre_completo, primera_visita_fecha),
+      paciente_id, fecha_hora, estado, vertical_calculada, es_primera_vez,
+      era_patients!paciente_id(es_vip, nombre_completo),
       era_professionals!profesional_id(nombre)
     `)
     .gte("fecha_hora", prevMonday.toISOString())
@@ -322,14 +308,9 @@ export async function getDashboardData(): Promise<DashboardData | null> {
 
   const semanaLabel = `${monday.getDate()}–${friday.getDate()} ${MESES[monday.getMonth()]} ${monday.getFullYear()}`;
 
-  // Solo pacientes de primera vez de la semana (excluye derivaciones internas y cardio/endocrino)
+  // Solo pacientes de primera vez, excluyendo estudios diagnósticos (son múltiples slots del mismo paciente)
   const proximas = rows
-    .filter((r) => {
-      const apptDate = r.fecha_hora.substring(0, 10);
-      const pvFecha = r.era_patients?.primera_visita_fecha;
-      const profNombre = r.era_professionals?.nombre ?? "";
-      return pvFecha === apptDate && !esProfExcluido(profNombre);
-    })
+    .filter((r) => r.es_primera_vez === true && toVertical(r.vertical_calculada) !== "estudios")
     .map((r) => {
       const nombreRaw = r.era_patients?.nombre_completo ?? "Paciente";
       const esVipPorEmoji = nombreRaw.includes("🧬");
@@ -473,16 +454,13 @@ export async function getAgendaData(): Promise<AgendaData | null> {
 // ─── PROFESIONALES ───────────────────────────────────────────────────────────
 
 export type ProfesionalPerf = {
-  id: string;
+  id: string; // id de la agenda principal del profesional (la de más turnos)
   nombre: string;
-  especialidad: string;
-  turnos: number;
+  turnos: number;          // total agendado en la semana
   asistidos: number;
-  cancelados: number;
-  no_shows: number;
-  primera_vez: number;
-  vip: number;
-  tasa_asistencia: number;
+  tasa_asistencia: number; // % asistidos / agendado
+  ocupacion_pct: number | null; // % minutos agendados / (agendados + libres). null si no hay datos de agenda abierta
+  verticales: { vertical: Vertical; cantidad: number; pct: number }[];
 };
 
 export type ProfesionalesData = {
@@ -509,75 +487,143 @@ export async function getProfesionalesData(): Promise<ProfesionalesData | null> 
   const friday = addDays(monday, 4);
   friday.setHours(23, 59, 59, 999);
 
-  const { data: rows, error } = await supabase
-    .from("era_appointments")
-    .select(`
-      profesional_id, paciente_id, estado, es_primera_vez,
-      era_professionals!profesional_id(id, nombre, especialidad),
-      era_patients!paciente_id(es_vip)
-    `)
-    .gte("fecha_hora", monday.toISOString())
-    .lte("fecha_hora", friday.toISOString());
+  const mondayDateOnly = monday.toISOString().split("T")[0];
+  const fridayDateOnly = new Date(friday.getTime()).toISOString().split("T")[0];
+
+  const [{ data: rows, error }, { data: openRows }] = await Promise.all([
+    supabase
+      .from("era_appointments")
+      .select(`
+        profesional_id, estado, duracion_min, vertical_calculada,
+        era_professionals!profesional_id(id, nombre)
+      `)
+      .gte("fecha_hora", monday.toISOString())
+      .lte("fecha_hora", friday.toISOString()),
+    supabase
+      .from("era_open_minutes")
+      .select("profesional_id, minutos_libres")
+      .gte("fecha", mondayDateOnly)
+      .lte("fecha", fridayDateOnly),
+  ]);
 
   if (error || !rows) return null;
 
   const semanaLabel = `${monday.getDate()}–${friday.getDate()} ${MESES[monday.getMonth()]} ${monday.getFullYear()}`;
 
+  // Agrupamos por NOMBRE del profesional (un mismo médico puede tener varias agendas en DriCloud)
   type Entry = {
-    prof: { id: string; nombre: string; especialidad: string };
-    turnos: number; asistidos: number; cancelados: number; no_shows: number;
-    primera_vez: number; vip_ids: Set<string>;
+    nombre: string;
+    idsAgenda: Map<string, number>; // profesional_id → turnos en esa agenda (para elegir la principal)
+    turnos: number;
+    asistidos: number;
+    minutosAgendados: number;
+    verticalesCount: Map<Vertical, number>;
   };
-  const byProf = new Map<string, Entry>();
+  const byNombre = new Map<string, Entry>();
 
   for (const r of rows as any[]) {
     const profId = r.profesional_id as string;
-    if (!profId || !r.era_professionals) continue;
+    const nombre = r.era_professionals?.nombre as string | undefined;
+    if (!profId || !nombre) continue;
 
-    if (!byProf.has(profId)) {
-      byProf.set(profId, {
-        prof: {
-          id: r.era_professionals.id ?? profId,
-          nombre: r.era_professionals.nombre ?? "",
-          especialidad: r.era_professionals.especialidad ?? "",
-        },
-        turnos: 0, asistidos: 0, cancelados: 0, no_shows: 0,
-        primera_vez: 0, vip_ids: new Set(),
-      });
+    let e = byNombre.get(nombre);
+    if (!e) {
+      e = {
+        nombre,
+        idsAgenda: new Map(),
+        turnos: 0,
+        asistidos: 0,
+        minutosAgendados: 0,
+        verticalesCount: new Map(),
+      };
+      byNombre.set(nombre, e);
     }
 
-    const e = byProf.get(profId)!;
+    e.idsAgenda.set(profId, (e.idsAgenda.get(profId) ?? 0) + 1);
     e.turnos++;
-    if (r.estado === "asistio") e.asistidos++;
-    else if (r.estado === "cancelada") e.cancelados++;
-    else if (r.estado === "no-show") e.no_shows++;
-    if (r.es_primera_vez) e.primera_vez++;
-    if (r.era_patients?.es_vip && r.paciente_id) e.vip_ids.add(r.paciente_id as string);
+    // "Asistido" = no cancelado ni no-show. DriCloud no marca estado "asistio" explícito,
+    // así que tomamos como asistidos a todo lo confirmado que no fue cancelado.
+    if (r.estado !== "cancelada" && r.estado !== "no-show") e.asistidos++;
+    e.minutosAgendados += (r.duracion_min as number | null) ?? 0;
+
+    const v = toVertical(r.vertical_calculada);
+    e.verticalesCount.set(v, (e.verticalesCount.get(v) ?? 0) + 1);
   }
 
-  const profesionales: ProfesionalPerf[] = [...byProf.values()]
-    .map(({ prof, turnos, asistidos, cancelados, no_shows, primera_vez, vip_ids }) => ({
-      id: prof.id,
-      nombre: prof.nombre,
-      especialidad: prof.especialidad,
-      turnos,
-      asistidos,
-      cancelados,
-      no_shows,
-      primera_vez,
-      vip: vip_ids.size,
-      tasa_asistencia: turnos > 0 ? Math.round((asistidos / turnos) * 1000) / 10 : 0,
-    }))
-    .sort((a, b) => b.turnos - a.turnos);
+  // Mapeo profesional_id (de cualquier agenda) → nombre del profesional, para sumar minutos libres por nombre.
+  const idToNombre = new Map<string, string>();
+  for (const [nombre, e] of byNombre.entries()) {
+    for (const profId of e.idsAgenda.keys()) idToNombre.set(profId, nombre);
+  }
+
+  // Sumar minutos libres por nombre de profesional, y registrar para qué profesionales
+  // tenemos al menos un día con datos de agenda abierta (para distinguir "100% ocupado"
+  // de "no hay datos sincronizados").
+  const minutosLibresPorNombre = new Map<string, number>();
+  const nombresConDatosOpen = new Set<string>();
+  for (const r of (openRows ?? []) as any[]) {
+    const nombre = idToNombre.get(r.profesional_id as string);
+    if (!nombre) continue;
+    nombresConDatosOpen.add(nombre);
+    minutosLibresPorNombre.set(nombre, (minutosLibresPorNombre.get(nombre) ?? 0) + (r.minutos_libres as number));
+  }
+
+  const profesionales: ProfesionalPerf[] = [...byNombre.values()]
+    .map((e) => {
+      // Elegir como id "principal" la agenda con más turnos (para el link a /era/profesionales/[id])
+      const idPrincipal = [...e.idsAgenda.entries()].sort((a, b) => b[1] - a[1])[0][0];
+
+      const verticales = [...e.verticalesCount.entries()]
+        .map(([vertical, cantidad]) => ({
+          vertical,
+          cantidad,
+          pct: e.turnos > 0 ? Math.round((cantidad / e.turnos) * 100) : 0,
+        }))
+        .sort((a, b) => b.cantidad - a.cantidad);
+
+      // Ocupación: solo se calcula si tenemos al menos un día con datos en era_open_minutes.
+      // Si no, devolvemos null (la tabla muestra "—") para no confundir con "100% ocupado".
+      const minutosLibres = minutosLibresPorNombre.get(e.nombre) ?? 0;
+      const denom = e.minutosAgendados + minutosLibres;
+      const ocupacion_pct = nombresConDatosOpen.has(e.nombre) && denom > 0
+        ? Math.round((e.minutosAgendados / denom) * 100)
+        : null;
+
+      return {
+        id: idPrincipal,
+        nombre: e.nombre,
+        turnos: e.turnos,
+        asistidos: e.asistidos,
+        tasa_asistencia: e.turnos > 0 ? Math.round((e.asistidos / e.turnos) * 1000) / 10 : 0,
+        ocupacion_pct,
+        verticales,
+      };
+    })
+    .sort((a, b) => b.asistidos - a.asistidos);
 
   return { semana_label: semanaLabel, profesionales };
 }
 
 // ─── PROFESIONAL DETAIL ──────────────────────────────────────────────────────
 
+// Tipo más completo que ProfesionalPerf: incluye desglose de PV/VIP/canceladas
+// que solo tiene sentido en la vista de detalle individual, no en la tabla agregada.
+export type ProfesionalDetailPerf = {
+  id: string;
+  nombre: string;
+  especialidad: string;
+  turnos: number;
+  asistidos: number;
+  cancelados: number;
+  no_shows: number;
+  primera_vez: number;
+  vip: number;
+  tasa_asistencia: number;
+};
+
 export type ProfesionalDetail = {
   semana_label: string;
-  perf: ProfesionalPerf;
+  perf: ProfesionalDetailPerf;
   citas: AgendaCita[];
 };
 
@@ -669,20 +715,20 @@ export async function getProfesionalDetail(id: string): Promise<ProfesionalDetai
 
 // ─── EMBUDOS ─────────────────────────────────────────────────────────────────
 
-export type EmbudoHorario = {
-  hora: string;
-  lunes: number;
-  martes: number;
-  miercoles: number;
-  jueves: number;
-  viernes: number;
-  total: number;
+export type HoraCount = { hora: string; cantidad: number };
+export type DiaEmbudos = {
+  dia: string;
+  fecha: string;
+  horas: HoraCount[];
+  franja_pico: { desde: string; hasta: string; total: number };
+  total_dia: number;
 };
-
 export type EmbudosData = {
   semana_label: string;
-  embudos: EmbudoHorario[];
+  dias: DiaEmbudos[];
 };
+
+const DIAS_EMB = ["Lun", "Mar", "Mié", "Jue", "Vie"];
 
 export async function getEmbudosData(): Promise<EmbudosData | null> {
   const supabase = createClient(
@@ -705,7 +751,7 @@ export async function getEmbudosData(): Promise<EmbudosData | null> {
 
   const { data: rows, error } = await supabase
     .from("era_appointments")
-    .select("fecha_hora, estado")
+    .select("paciente_id, fecha_hora, estado, era_professionals!profesional_id(nombre)")
     .gte("fecha_hora", monday.toISOString())
     .lte("fecha_hora", friday.toISOString());
 
@@ -713,45 +759,62 @@ export async function getEmbudosData(): Promise<EmbudosData | null> {
 
   const semanaLabel = `${monday.getDate()}–${friday.getDate()} ${MESES[monday.getMonth()]} ${monday.getFullYear()}`;
 
-  type Slot = { lunes: number; martes: number; miercoles: number; jueves: number; viernes: number };
-  const slotMap = new Map<string, Slot>();
+  // Activos = no cancelados, sin técnicos de sueroterapia
+  const activos = (rows as any[]).filter((r) =>
+    r.estado !== "cancelada" && !esTecnico(r.era_professionals?.nombre ?? "")
+  );
 
-  for (const r of rows as { fecha_hora: string; estado: string }[]) {
-    if (r.estado === "cancelada") continue;
-    const h = parseInt(r.fecha_hora.substring(11, 13));
-    const m = parseInt(r.fecha_hora.substring(14, 16));
-    const hora = `${String(h).padStart(2, "0")}:${m < 30 ? "00" : "30"}`;
-
+  // Agrupar por fecha → hora → set de paciente_id (pacientes únicos por hora)
+  const byDayHour = new Map<string, Map<number, Set<string>>>();
+  for (const r of activos) {
     const dateStr = r.fecha_hora.substring(0, 10);
-    const dow = new Date(dateStr + "T12:00:00Z").getUTCDay();
-    if (dow < 1 || dow > 5) continue;
+    const hour = parseInt(r.fecha_hora.substring(11, 13));
+    if (!byDayHour.has(dateStr)) byDayHour.set(dateStr, new Map());
+    const hm = byDayHour.get(dateStr)!;
+    if (!hm.has(hour)) hm.set(hour, new Set());
+    hm.get(hour)!.add(r.paciente_id);
+  }
 
-    if (!slotMap.has(hora)) {
-      slotMap.set(hora, { lunes: 0, martes: 0, miercoles: 0, jueves: 0, viernes: 0 });
+  const dias: DiaEmbudos[] = DIAS_EMB.map((dia, i) => {
+    const fecha = addDays(monday, i);
+    const fechaStr = `${fecha.getDate()}/${fecha.getMonth() + 1}`;
+    const dateKey = `${fecha.getFullYear()}-${String(fecha.getMonth() + 1).padStart(2, "0")}-${String(fecha.getDate()).padStart(2, "0")}`;
+    const hourMap = byDayHour.get(dateKey) ?? new Map<number, Set<string>>();
+
+    // Horas del día con actividad (mínimo 8 a 20)
+    const minH = Math.min(8, ...[...hourMap.keys()]);
+    const maxH = Math.max(20, ...[...hourMap.keys()]);
+    const horas: HoraCount[] = Array.from({ length: maxH - minH + 1 }, (_, idx) => {
+      const h = minH + idx;
+      return { hora: `${String(h).padStart(2, "0")}:00`, cantidad: hourMap.get(h)?.size ?? 0 };
+    });
+
+    // Ventana deslizante de 3 horas → máximo de pacientes únicos en esa franja
+    let bestStart = minH, bestTotal = 0;
+    for (let start = minH; start <= maxH - 2; start++) {
+      const window = new Set<string>();
+      for (let h = start; h < start + 3; h++) hourMap.get(h)?.forEach((id) => window.add(id));
+      if (window.size > bestTotal) { bestTotal = window.size; bestStart = start; }
     }
-    const keys = ["lunes", "martes", "miercoles", "jueves", "viernes"] as const;
-    slotMap.get(hora)![keys[dow - 1]]++;
-  }
 
-  if (slotMap.size === 0) return { semana_label: semanaLabel, embudos: [] };
+    // Total de pacientes únicos del día
+    const dayPatients = new Set(activos
+      .filter((r) => r.fecha_hora.substring(0, 10) === dateKey)
+      .map((r) => r.paciente_id)
+    );
 
-  const sortedHoras = [...slotMap.keys()].sort();
-  const allHoras: string[] = [];
-  let curH = parseInt(sortedHoras[0].substring(0, 2));
-  let curM = parseInt(sortedHoras[0].substring(3, 5));
-  const endH = parseInt(sortedHoras[sortedHoras.length - 1].substring(0, 2));
-  const endM = parseInt(sortedHoras[sortedHoras.length - 1].substring(3, 5));
-
-  while (curH < endH || (curH === endH && curM <= endM)) {
-    allHoras.push(`${String(curH).padStart(2, "0")}:${curM === 0 ? "00" : "30"}`);
-    if (curM === 0) curM = 30;
-    else { curM = 0; curH++; }
-  }
-
-  const embudos: EmbudoHorario[] = allHoras.map((hora) => {
-    const s = slotMap.get(hora) ?? { lunes: 0, martes: 0, miercoles: 0, jueves: 0, viernes: 0 };
-    return { hora, ...s, total: s.lunes + s.martes + s.miercoles + s.jueves + s.viernes };
+    return {
+      dia,
+      fecha: fechaStr,
+      horas,
+      franja_pico: {
+        desde: `${String(bestStart).padStart(2, "0")}:00`,
+        hasta: `${String(bestStart + 3).padStart(2, "0")}:00`,
+        total: bestTotal,
+      },
+      total_dia: dayPatients.size,
+    };
   });
 
-  return { semana_label: semanaLabel, embudos };
+  return { semana_label: semanaLabel, dias };
 }
