@@ -27,6 +27,15 @@ export default async function DrilldownProfesional({ params }: { params: Promise
     }, {} as Record<string, number>)
   ).sort((a, b) => b[1] - a[1]);
 
+  // Agrupar las citas por día para mostrar la semana jornada por jornada
+  const DIAS = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
+  const citasPorDia = citas.reduce((acc, c) => {
+    const key = c.fecha_hora.substring(0, 10);
+    (acc[key] ||= []).push(c);
+    return acc;
+  }, {} as Record<string, typeof citas>);
+  const diasOrdenados = Object.keys(citasPorDia).sort();
+
   return (
     <div className="p-6 space-y-5">
       <Link href="/era/profesionales" className="text-blue-600 text-sm hover:underline">← Profesionales</Link>
@@ -73,32 +82,45 @@ export default async function DrilldownProfesional({ params }: { params: Promise
         <div className="px-4 py-3 border-b border-gray-100">
           <h2 className="text-sm font-bold text-gray-700">Citas de la semana ({citas.length})</h2>
         </div>
-        {citas.map((c) => {
-          const meta = VERTICAL_META[c.vertical];
-          const [, mes, dia] = c.fecha_hora.substring(0, 10).split("-");
-          const hora = c.fecha_hora.substring(11, 16);
+        {citas.length === 0 && (
+          <div className="px-4 py-6 text-center text-sm text-gray-400">Sin citas esta semana.</div>
+        )}
+        {diasOrdenados.map((diaKey) => {
+          const [, mesD, diaD] = diaKey.split("-");
+          const nombreDia = DIAS[new Date(`${diaKey}T12:00:00`).getDay()];
           return (
-            <div
-              key={c.id}
-              className="flex items-center gap-3 px-4 py-2.5 border-b border-gray-100 last:border-0 hover:bg-gray-50"
-              style={{ borderLeft: `3px solid ${c.es_primera_vez ? "#eab308" : meta.color}` }}
-            >
-              <div className="text-xs font-bold text-gray-400 w-20 shrink-0">{dia}/{mes} {hora}</div>
-              <div className="flex-1 min-w-0">
-                <div className="text-sm font-semibold text-gray-800 truncate">
-                  {c.paciente.nombre_completo}
-                  {c.paciente.es_vip && <span className="ml-1">🧬</span>}
-                </div>
-                <div className="text-xs text-gray-400 truncate">{c.servicio}</div>
+            <div key={diaKey}>
+              <div className="px-4 py-1.5 bg-gray-50 border-b border-gray-100 text-xs font-bold text-gray-500 uppercase tracking-wide">
+                {nombreDia} {parseInt(diaD)}/{parseInt(mesD)} · {citasPorDia[diaKey].length}
               </div>
-              <div className="flex gap-1 shrink-0">
-                {c.es_primera_vez && (
-                  <span className="text-xs font-bold px-1.5 py-0.5 rounded bg-blue-100 text-blue-700">PV</span>
-                )}
-                <span className="text-xs font-bold px-1.5 py-0.5 rounded text-white" style={{ background: meta.color, fontSize: "0.6rem" }}>
-                  {meta.label.toUpperCase().slice(0, 6)}
-                </span>
-              </div>
+              {citasPorDia[diaKey].map((c) => {
+                const meta = VERTICAL_META[c.vertical];
+                const hora = c.fecha_hora.substring(11, 16);
+                return (
+                  <div
+                    key={c.id}
+                    className="flex items-center gap-3 px-4 py-2.5 border-b border-gray-100 last:border-0 hover:bg-gray-50"
+                    style={{ borderLeft: `3px solid ${c.es_primera_vez ? "#eab308" : meta.color}` }}
+                  >
+                    <div className="text-xs font-bold text-gray-400 w-12 shrink-0">{hora}</div>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-semibold text-gray-800 truncate">
+                        {c.paciente.nombre_completo}
+                        {c.paciente.es_vip && <span className="ml-1">🧬</span>}
+                      </div>
+                      <div className="text-xs text-gray-400 truncate">{c.servicio}</div>
+                    </div>
+                    <div className="flex gap-1 shrink-0">
+                      {c.es_primera_vez && (
+                        <span className="text-xs font-bold px-1.5 py-0.5 rounded bg-blue-100 text-blue-700">PV</span>
+                      )}
+                      <span className="text-xs font-bold px-1.5 py-0.5 rounded text-white" style={{ background: meta.color, fontSize: "0.6rem" }}>
+                        {meta.label.toUpperCase().slice(0, 6)}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           );
         })}

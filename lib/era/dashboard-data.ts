@@ -671,26 +671,40 @@ export async function getProfesionalDetail(id: string): Promise<ProfesionalDetai
   const friday = addDays(monday, 4);
   friday.setHours(23, 59, 59, 999);
 
-  const [{ data: profData }, { data: rows, error }] = await Promise.all([
-    supabase
-      .from("era_professionals")
-      .select("id, nombre, especialidad")
-      .eq("id", id)
-      .single(),
-    supabase
-      .from("era_appointments")
-      .select(`
-        id, paciente_id, fecha_hora, estado, vertical_calculada, es_primera_vez,
-        era_patients!paciente_id(nombre_completo, es_vip),
-        era_services!servicio_id(nombre)
-      `)
-      .eq("profesional_id", id)
-      .gte("fecha_hora", monday.toISOString())
-      .lte("fecha_hora", friday.toISOString())
-      .order("fecha_hora"),
-  ]);
+  // El profesional pedido (para obtener su nombre)
+  const { data: profData } = await supabase
+    .from("era_professionals")
+    .select("id, nombre, especialidad")
+    .eq("id", id)
+    .single();
 
-  if (!profData || error || !rows) return null;
+  if (!profData) return null;
+
+  // Un mismo médico puede tener varias agendas en DriCloud (varios profesional_id
+  // con el mismo nombre). La tabla de profesionales agrega por nombre, así que el
+  // detalle debe traer los turnos de TODAS sus agendas, no solo la del id del link.
+  // Si no, aparecen vacíos o con un solo día.
+  const { data: agendas } = await supabase
+    .from("era_professionals")
+    .select("id")
+    .eq("nombre", profData.nombre);
+
+  const idsAgenda = (agendas ?? []).map((a) => a.id);
+  if (idsAgenda.length === 0) idsAgenda.push(profData.id);
+
+  const { data: rows, error } = await supabase
+    .from("era_appointments")
+    .select(`
+      id, paciente_id, fecha_hora, estado, vertical_calculada, es_primera_vez,
+      era_patients!paciente_id(nombre_completo, es_vip),
+      era_services!servicio_id(nombre)
+    `)
+    .in("profesional_id", idsAgenda)
+    .gte("fecha_hora", monday.toISOString())
+    .lte("fecha_hora", friday.toISOString())
+    .order("fecha_hora");
+
+  if (error || !rows) return null;
 
   const semanaLabel = `${monday.getDate()}–${friday.getDate()} ${MESES[monday.getMonth()]} ${monday.getFullYear()}`;
 
