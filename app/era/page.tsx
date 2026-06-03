@@ -44,27 +44,27 @@ export default async function EraOverview() {
     : null;
 
   return (
-    <div className="p-7 space-y-7 max-w-[1400px]">
+    <div className="p-4 md:p-7 space-y-5 md:space-y-7 max-w-[1400px]">
       {/* Header */}
       <div
-        className="relative overflow-hidden rounded-2xl px-7 py-6 flex justify-between items-center text-white"
+        className="relative overflow-hidden rounded-2xl px-5 py-5 md:px-7 md:py-6 flex flex-col md:flex-row md:justify-between md:items-center gap-3 md:gap-4 text-white"
         style={{ background: "linear-gradient(120deg, #232E49 0%, #2C3A5B 45%, #3E4095 100%)" }}
       >
         {/* Filete dorado superior */}
         <div className="absolute top-0 left-0 right-0 h-[3px]" style={{ background: "linear-gradient(90deg, #D2AE6D 0%, rgba(210,174,109,0) 70%)" }} />
-        <div>
-          <h1 className="text-[22px] font-display font-semibold tracking-tight">Dashboard ERA Longevity</h1>
-          <p className="text-white/55 text-sm mt-1 font-light">
+        <div className="min-w-0">
+          <h1 className="text-[18px] md:text-[22px] font-display font-semibold tracking-tight">Dashboard ERA Longevity</h1>
+          <p className="text-white/55 text-[13px] md:text-sm mt-1 font-light">
             {semana_label} · {total_profesionales} profesionales
           </p>
           {ultimaSyncLabel && (
-            <p className="text-white/40 text-xs mt-1 font-light">
+            <p className="text-white/40 text-[11px] md:text-xs mt-1 font-light">
               Última actualización: {ultimaSyncLabel}
             </p>
           )}
         </div>
         <div
-          className="rounded-full px-4 py-2 text-sm font-medium tracking-wide"
+          className="self-start md:self-auto rounded-full px-3 md:px-4 py-1.5 md:py-2 text-xs md:text-sm font-medium tracking-wide shrink-0"
           style={{ background: "rgba(210,174,109,0.14)", border: "1px solid rgba(210,174,109,0.45)", color: "#E2CC9C" }}
         >
           {semana_label}
@@ -74,7 +74,7 @@ export default async function EraOverview() {
       {/* KPIs */}
       <section>
         <SectionTitle>Resumen de la semana</SectionTitle>
-        <div className="grid grid-cols-7 gap-3">
+        <div className="grid grid-cols-2 md:grid-cols-7 gap-2.5 md:gap-3">
           <KpiCard
             valor={kpi.visitas_unicas}
             label="Visitas únicas"
@@ -126,7 +126,10 @@ export default async function EraOverview() {
       {/* Verticales */}
       <section>
         <SectionTitle>Distribución por vertical</SectionTitle>
-        <div className="grid gap-2.5" style={{ gridTemplateColumns: `repeat(${distribucion.length}, 1fr)` }}>
+        <div
+          className="grid grid-cols-2 gap-2.5 md:[grid-template-columns:repeat(var(--vert-cols),minmax(0,1fr))]"
+          style={{ ["--vert-cols" as string]: distribucion.length }}
+        >
           {distribucion.map(({ vertical, cantidad, porcentaje, sub }) => {
             const meta = VERTICAL_META[vertical] ?? VERTICAL_META["longevidad"];
             return (
@@ -178,11 +181,12 @@ export default async function EraOverview() {
             return (
               <div
                 key={c.id}
-                className="px-4 py-3 border-b border-navy/5 last:border-0 hover:bg-milky/60 transition-colors"
+                className="px-3 md:px-4 py-3 border-b border-navy/5 last:border-0 hover:bg-milky/60 transition-colors"
                 style={{ borderLeft: `3px solid ${meta.color}` }}
               >
+                {/* Fila superior: fecha + nombre + (badge en mobile) */}
                 <div className="flex items-center gap-3">
-                  <div className="text-[11px] font-medium text-navy/40 w-16 shrink-0 tabular-nums">
+                  <div className="text-[11px] font-medium text-navy/40 w-14 md:w-16 shrink-0 tabular-nums">
                     {dia}/{mes} {hora}
                   </div>
                   <div className="flex-1 min-w-0">
@@ -190,19 +194,23 @@ export default async function EraOverview() {
                       {c.paciente.nombre_completo}
                       {c.paciente.es_vip && <span className="ml-1">🧬</span>}
                     </div>
+                    {/* En mobile el profesional va abajo del nombre */}
+                    <div className="md:hidden text-[11px] text-navy/40 italic font-light truncate mt-0.5">
+                      {c.profesional.nombre}
+                    </div>
                   </div>
-                  <div className="text-[11px] text-navy/40 italic shrink-0 font-light">{c.profesional.nombre}</div>
+                  <div className="hidden md:block text-[11px] text-navy/40 italic shrink-0 font-light">{c.profesional.nombre}</div>
                   <VerticalBadge vertical={c.vertical as Vertical} />
                 </div>
                 {(c.motivo_consulta || c.observaciones) && (
-                  <div className="mt-1.5 ml-[76px] space-y-0.5">
+                  <div className="mt-1.5 ml-[68px] md:ml-[76px] space-y-0.5">
                     {c.motivo_consulta && (
-                      <p className="text-xs text-navy/60">
+                      <p className="text-[11px] md:text-xs text-navy/60">
                         <span className="font-medium text-navy/45">Motivo: </span>{c.motivo_consulta}
                       </p>
                     )}
                     {c.observaciones && (
-                      <p className="text-xs text-navy/45 italic">
+                      <p className="text-[11px] md:text-xs text-navy/45 italic">
                         <span className="font-medium not-italic">Obs: </span>{c.observaciones}
                       </p>
                     )}
@@ -217,38 +225,78 @@ export default async function EraOverview() {
       {/* Comparativo */}
       <section>
         <SectionTitle>Comparativo semana actual vs anterior</SectionTitle>
-        <div className="bg-white rounded-xl shadow-card border border-navy/5 p-5">
-          <div className="grid grid-cols-4 gap-4 pb-2.5 mb-1 border-b border-navy/10 text-[11px] font-medium text-navy/40 uppercase tracking-wide">
-            <span>Métrica</span>
-            <span className="text-center">Sem. anterior</span>
-            <span className="text-center">Sem. actual</span>
-            <span className="text-right">Δ</span>
-          </div>
-          {[
+        {(() => {
+          const filas = [
             { label: "Visitas únicas", s1: vs.visitas_unicas, s2: kpi.visitas_unicas, pos: true },
             { label: "Tasa asistencia", s1: `${vs.tasa_asistencia}%`, s2: `${kpi.tasa_asistencia}%`, pos: true },
             { label: "Primera vez", s1: vs.primera_vez, s2: kpi.primera_vez, pos: true },
             { label: "Cancelados", s1: vs.canceladas, s2: kpi.canceladas, pos: false },
-          ].map(({ label, s1, s2, pos }) => {
-            const n1 = typeof s1 === "string" ? parseFloat(s1) : s1;
-            const n2 = typeof s2 === "string" ? parseFloat(s2) : s2;
-            const diff = n2 - n1;
-            const good = pos ? diff >= 0 : diff <= 0;
-            return (
-              <div key={label} className="grid grid-cols-4 gap-4 py-2.5 border-b border-navy/5 last:border-0 text-sm items-center">
-                <span className="text-navy/70">{label}</span>
-                <span className="text-center font-medium text-navy/80 tabular-nums">{s1}</span>
-                <span className="text-center font-semibold text-navy tabular-nums">{s2}</span>
-                <span
-                  className="text-right text-xs font-semibold tabular-nums"
-                  style={{ color: diff === 0 ? "#8A93A8" : good ? "var(--signal-up)" : "var(--signal-down)" }}
-                >
-                  {diff > 0 ? `▲ +${diff.toFixed(1).replace(".0", "")}` : diff < 0 ? `▼ ${diff.toFixed(1).replace(".0", "")}` : "—"}
-                </span>
+          ];
+          return (
+            <>
+              {/* Mobile: tarjetas (1 por métrica) */}
+              <div className="grid grid-cols-1 gap-2.5 md:hidden">
+                {filas.map(({ label, s1, s2, pos }) => {
+                  const n1 = typeof s1 === "string" ? parseFloat(s1) : s1;
+                  const n2 = typeof s2 === "string" ? parseFloat(s2) : s2;
+                  const diff = n2 - n1;
+                  const good = pos ? diff >= 0 : diff <= 0;
+                  const accent = diff === 0 ? "#8A93A8" : good ? "var(--signal-up)" : "var(--signal-down)";
+                  return (
+                    <div
+                      key={label}
+                      className="bg-white rounded-xl shadow-card border border-navy/5 p-3.5 flex items-center justify-between gap-3"
+                      style={{ borderLeft: `3px solid ${accent}` }}
+                    >
+                      <div className="min-w-0">
+                        <div className="text-[11px] uppercase tracking-[0.06em] text-navy/50 font-medium">{label}</div>
+                        <div className="mt-1 flex items-baseline gap-1.5 tabular-nums">
+                          <span className="text-navy/40 text-sm">{s1}</span>
+                          <span className="text-navy/30 text-xs">→</span>
+                          <span className="font-display font-semibold text-navy text-base">{s2}</span>
+                        </div>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <div className="text-base font-semibold tabular-nums" style={{ color: accent }}>
+                          {diff > 0 ? `▲ +${diff.toFixed(1).replace(".0", "")}` : diff < 0 ? `▼ ${diff.toFixed(1).replace(".0", "")}` : "—"}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
-            );
-          })}
-        </div>
+
+              {/* Desktop: tabla 4 columnas */}
+              <div className="hidden md:block bg-white rounded-xl shadow-card border border-navy/5 p-5">
+                <div className="grid grid-cols-4 gap-4 pb-2.5 mb-1 border-b border-navy/10 text-[11px] font-medium text-navy/40 uppercase tracking-wide">
+                  <span>Métrica</span>
+                  <span className="text-center">Sem. anterior</span>
+                  <span className="text-center">Sem. actual</span>
+                  <span className="text-right">Δ</span>
+                </div>
+                {filas.map(({ label, s1, s2, pos }) => {
+                  const n1 = typeof s1 === "string" ? parseFloat(s1) : s1;
+                  const n2 = typeof s2 === "string" ? parseFloat(s2) : s2;
+                  const diff = n2 - n1;
+                  const good = pos ? diff >= 0 : diff <= 0;
+                  return (
+                    <div key={label} className="grid grid-cols-4 gap-4 py-2.5 border-b border-navy/5 last:border-0 text-sm items-center">
+                      <span className="text-navy/70">{label}</span>
+                      <span className="text-center font-medium text-navy/80 tabular-nums">{s1}</span>
+                      <span className="text-center font-semibold text-navy tabular-nums">{s2}</span>
+                      <span
+                        className="text-right text-xs font-semibold tabular-nums"
+                        style={{ color: diff === 0 ? "#8A93A8" : good ? "var(--signal-up)" : "var(--signal-down)" }}
+                      >
+                        {diff > 0 ? `▲ +${diff.toFixed(1).replace(".0", "")}` : diff < 0 ? `▼ ${diff.toFixed(1).replace(".0", "")}` : "—"}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </>
+          );
+        })()}
       </section>
     </div>
   );

@@ -34,10 +34,10 @@ function CardTitle({ children }: { children: React.ReactNode }) {
 
 export default function DashboardCharts({ turnos_por_dia, distribucion }: Props) {
   return (
-    <div className="grid grid-cols-3 gap-4">
-      <div className="col-span-2 bg-white rounded-xl p-5 shadow-card border border-navy/5">
+    <div className="grid grid-cols-1 md:grid-cols-3 gap-3 md:gap-4">
+      <div className="md:col-span-2 bg-white rounded-xl p-4 md:p-5 shadow-card border border-navy/5">
         <CardTitle>Turnos por día</CardTitle>
-        <ResponsiveContainer width="100%" height={190}>
+        <ResponsiveContainer width="100%" height={170}>
           <BarChart data={turnos_por_dia} barCategoryGap="35%">
             <defs>
               <linearGradient id="eraBar" x1="0" y1="0" x2="0" y2="1">
@@ -67,7 +67,7 @@ export default function DashboardCharts({ turnos_por_dia, distribucion }: Props)
         </ResponsiveContainer>
       </div>
 
-      <div className="bg-white rounded-xl p-5 shadow-card border border-navy/5">
+      <div className="bg-white rounded-xl p-4 md:p-5 shadow-card border border-navy/5">
         <CardTitle>Verticales</CardTitle>
         <ResponsiveContainer width="100%" height={190}>
           <PieChart>
