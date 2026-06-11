@@ -26,6 +26,24 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
+// ─── Decoder de entities HTML (DriCloud serializa textareas con &#XXX;) ──────
+const HTML_NAMED = {
+  amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: " ",
+  aacute: "á", eacute: "é", iacute: "í", oacute: "ó", uacute: "ú",
+  Aacute: "Á", Eacute: "É", Iacute: "Í", Oacute: "Ó", Uacute: "Ú",
+  ntilde: "ñ", Ntilde: "Ñ", uuml: "ü", Uuml: "Ü",
+  iquest: "¿", iexcl: "¡", ordf: "ª", ordm: "º", deg: "°",
+  hellip: "…", mdash: "—", ndash: "–",
+  lsquo: "‘", rsquo: "’", ldquo: "“", rdquo: "”",
+};
+function decodeEntities(s) {
+  if (!s) return s;
+  return s
+    .replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(Number(n)))
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, n) => String.fromCodePoint(parseInt(n, 16)))
+    .replace(/&([a-zA-Z]+);/g, (m, name) => HTML_NAMED[name] ?? m);
+}
+
 // ─── Mapeo de especialidades → vertical ──────────────────────────────────────
 // La sala/despacho NO determina la vertical — solo el TipoCita y la especialidad.
 
@@ -449,8 +467,8 @@ async function scrapeDia(page, date) {
       const override = tipoCitaToVertical(details.tipoCita);
       if (override) appt.tipoCitaVertical = override;
       appt.tipoCita       = details.tipoCita ?? null;
-      appt.motivoConsulta = details.motivoConsulta ?? null;
-      appt.observaciones  = details.observaciones ?? null;
+      appt.motivoConsulta = decodeEntities(details.motivoConsulta ?? null);
+      appt.observaciones  = decodeEntities(details.observaciones ?? null);
     }
   }
 
