@@ -20,7 +20,7 @@ export default function EraLayout({ children }: { children: React.ReactNode }) {
     href === "/era" ? pathname === "/era" : pathname.startsWith(href);
 
   return (
-    <div className="flex min-h-screen bg-milky">
+    <div className="flex min-h-screen bg-[color:var(--bg-app)]">
       {/* Sidebar — solo desktop (md+) */}
       <aside
         className="hidden md:flex w-60 flex-shrink-0 flex-col"

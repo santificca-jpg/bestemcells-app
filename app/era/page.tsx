@@ -10,7 +10,7 @@ export const revalidate = 300; // refrescar datos cada 5 minutos
 // Encabezado de sección con acento dorado de marca
 function SectionTitle({ children }: { children: React.ReactNode }) {
   return (
-    <h2 className="flex items-center gap-2.5 text-[12px] font-display font-medium uppercase tracking-[0.14em] text-navy/70 mb-3">
+    <h2 className="flex items-center gap-2.5 text-[12px] font-display font-medium uppercase tracking-[0.14em] text-navy/70 dark:text-white/65 mb-3">
       <span className="h-3.5 w-[3px] rounded-full" style={{ background: "#D2AE6D" }} />
       {children}
     </h2>
@@ -22,7 +22,7 @@ export default async function EraOverview() {
 
   if (!data) {
     return (
-      <div className="p-8 text-center text-navy/70 font-display">
+      <div className="p-8 text-center text-navy/70 dark:text-white/70 font-display">
         No se pudieron cargar los datos. Verificá la conexión con Supabase.
       </div>
     );
@@ -135,8 +135,13 @@ export default async function EraOverview() {
             return (
               <div
                 key={vertical}
-                className="rounded-xl p-3.5 text-center border border-navy/5 shadow-card"
-                style={{ background: meta.bg, opacity: cantidad === 0 ? 0.5 : 1 }}
+                className="rounded-xl p-3.5 text-center border border-[color:var(--border-soft)] shadow-card"
+                style={{
+                  // Tinte del color de vertical mezclado con el fondo de tarjeta;
+                  // funciona en light (mezcla con blanco) y dark (mezcla con navy).
+                  background: `color-mix(in srgb, ${meta.color} 14%, var(--bg-card))`,
+                  opacity: cantidad === 0 ? 0.5 : 1,
+                }}
               >
                 <div className="text-[11px] font-medium uppercase tracking-[0.06em] mb-1.5" style={{ color: meta.color }}>
                   {meta.emoji} {meta.label}
@@ -148,7 +153,7 @@ export default async function EraOverview() {
                   {cantidad === 0 ? "sin datos" : `${porcentaje}%`}
                 </div>
                 {sub && sub.length > 0 && (
-                  <div className="mt-2.5 pt-2.5 border-t border-navy/10 text-left space-y-1">
+                  <div className="mt-2.5 pt-2.5 border-t border-[color:var(--border-medium)] text-left space-y-1">
                     {sub.map((s) => (
                       <div key={s.label} className="flex justify-between items-center text-[11px] pl-2 border-l-2" style={{ borderColor: meta.color, color: meta.color }}>
                         <span className="opacity-70">{s.label} · {s.profesional}</span>
@@ -169,9 +174,9 @@ export default async function EraOverview() {
       {/* Pacientes de primera vez */}
       <section>
         <SectionTitle>Pacientes de primera vez esta semana</SectionTitle>
-        <div className="bg-white rounded-xl shadow-card border border-navy/5 overflow-hidden">
+        <div className="bg-[color:var(--bg-card)] rounded-xl shadow-card border border-[color:var(--border-soft)] overflow-hidden">
           {proximas.length === 0 ? (
-            <div className="px-4 py-7 text-sm text-navy/40 text-center font-light">Sin pacientes de primera vez esta semana</div>
+            <div className="px-4 py-7 text-sm text-[color:var(--text-muted)] text-center font-light">Sin pacientes de primera vez esta semana</div>
           ) : proximas.map((c) => {
             const meta = VERTICAL_META[c.vertical] ?? VERTICAL_META["longevidad"];
             const dt = new Date(c.fecha_hora);
@@ -181,36 +186,36 @@ export default async function EraOverview() {
             return (
               <div
                 key={c.id}
-                className="px-3 md:px-4 py-3 border-b border-navy/5 last:border-0 hover:bg-milky/60 transition-colors"
+                className="px-3 md:px-4 py-3 border-b border-[color:var(--border-soft)] last:border-0 hover:bg-[color:var(--bg-card-hover)] transition-colors"
                 style={{ borderLeft: `3px solid ${meta.color}` }}
               >
                 {/* Fila superior: fecha + nombre + (badge en mobile) */}
                 <div className="flex items-center gap-3">
-                  <div className="text-[11px] font-medium text-navy/40 w-14 md:w-16 shrink-0 tabular-nums">
+                  <div className="text-[11px] font-medium text-[color:var(--text-muted)] w-14 md:w-16 shrink-0 tabular-nums">
                     {dia}/{mes} {hora}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <div className="text-sm font-medium text-navy truncate">
+                    <div className="text-sm font-medium text-[color:var(--text-primary)] truncate">
                       {c.paciente.nombre_completo}
                       {c.paciente.es_vip && <span className="ml-1">🧬</span>}
                     </div>
                     {/* En mobile el profesional va abajo del nombre */}
-                    <div className="md:hidden text-[11px] text-navy/40 italic font-light truncate mt-0.5">
+                    <div className="md:hidden text-[11px] text-[color:var(--text-muted)] italic font-light truncate mt-0.5">
                       {c.profesional.nombre}
                     </div>
                   </div>
-                  <div className="hidden md:block text-[11px] text-navy/40 italic shrink-0 font-light">{c.profesional.nombre}</div>
+                  <div className="hidden md:block text-[11px] text-[color:var(--text-muted)] italic shrink-0 font-light">{c.profesional.nombre}</div>
                   <VerticalBadge vertical={c.vertical as Vertical} />
                 </div>
                 {(c.motivo_consulta || c.observaciones) && (
                   <div className="mt-1.5 ml-[68px] md:ml-[76px] space-y-0.5">
                     {c.motivo_consulta && (
-                      <p className="text-[11px] md:text-xs text-navy/60">
-                        <span className="font-medium text-navy/45">Motivo: </span>{c.motivo_consulta}
+                      <p className="text-[11px] md:text-xs text-[color:var(--text-secondary)]">
+                        <span className="font-medium text-[color:var(--text-muted)]">Motivo: </span>{c.motivo_consulta}
                       </p>
                     )}
                     {c.observaciones && (
-                      <p className="text-[11px] md:text-xs text-navy/45 italic">
+                      <p className="text-[11px] md:text-xs text-[color:var(--text-muted)] italic">
                         <span className="font-medium not-italic">Obs: </span>{c.observaciones}
                       </p>
                     )}
@@ -245,15 +250,15 @@ export default async function EraOverview() {
                   return (
                     <div
                       key={label}
-                      className="bg-white rounded-xl shadow-card border border-navy/5 p-3.5 flex items-center justify-between gap-3"
+                      className="bg-[color:var(--bg-card)] rounded-xl shadow-card border border-[color:var(--border-soft)] p-3.5 flex items-center justify-between gap-3"
                       style={{ borderLeft: `3px solid ${accent}` }}
                     >
                       <div className="min-w-0">
-                        <div className="text-[11px] uppercase tracking-[0.06em] text-navy/50 font-medium">{label}</div>
+                        <div className="text-[11px] uppercase tracking-[0.06em] text-[color:var(--text-secondary)] font-medium">{label}</div>
                         <div className="mt-1 flex items-baseline gap-1.5 tabular-nums">
-                          <span className="text-navy/40 text-sm">{s1}</span>
-                          <span className="text-navy/30 text-xs">→</span>
-                          <span className="font-display font-semibold text-navy text-base">{s2}</span>
+                          <span className="text-[color:var(--text-muted)] text-sm">{s1}</span>
+                          <span className="text-[color:var(--text-muted)] text-xs opacity-60">→</span>
+                          <span className="font-display font-semibold text-[color:var(--text-primary)] text-base">{s2}</span>
                         </div>
                       </div>
                       <div className="text-right shrink-0">
@@ -267,8 +272,8 @@ export default async function EraOverview() {
               </div>
 
               {/* Desktop: tabla 4 columnas */}
-              <div className="hidden md:block bg-white rounded-xl shadow-card border border-navy/5 p-5">
-                <div className="grid grid-cols-4 gap-4 pb-2.5 mb-1 border-b border-navy/10 text-[11px] font-medium text-navy/40 uppercase tracking-wide">
+              <div className="hidden md:block bg-[color:var(--bg-card)] rounded-xl shadow-card border border-[color:var(--border-soft)] p-5">
+                <div className="grid grid-cols-4 gap-4 pb-2.5 mb-1 border-b border-[color:var(--border-medium)] text-[11px] font-medium text-[color:var(--text-muted)] uppercase tracking-wide">
                   <span>Métrica</span>
                   <span className="text-center">Sem. anterior</span>
                   <span className="text-center">Sem. actual</span>
@@ -280,13 +285,13 @@ export default async function EraOverview() {
                   const diff = n2 - n1;
                   const good = pos ? diff >= 0 : diff <= 0;
                   return (
-                    <div key={label} className="grid grid-cols-4 gap-4 py-2.5 border-b border-navy/5 last:border-0 text-sm items-center">
-                      <span className="text-navy/70">{label}</span>
-                      <span className="text-center font-medium text-navy/80 tabular-nums">{s1}</span>
-                      <span className="text-center font-semibold text-navy tabular-nums">{s2}</span>
+                    <div key={label} className="grid grid-cols-4 gap-4 py-2.5 border-b border-[color:var(--border-soft)] last:border-0 text-sm items-center">
+                      <span className="text-[color:var(--text-secondary)]">{label}</span>
+                      <span className="text-center font-medium text-[color:var(--text-secondary)] tabular-nums">{s1}</span>
+                      <span className="text-center font-semibold text-[color:var(--text-primary)] tabular-nums">{s2}</span>
                       <span
                         className="text-right text-xs font-semibold tabular-nums"
-                        style={{ color: diff === 0 ? "#8A93A8" : good ? "var(--signal-up)" : "var(--signal-down)" }}
+                        style={{ color: diff === 0 ? "var(--chart-axis)" : good ? "var(--signal-up)" : "var(--signal-down)" }}
                       >
                         {diff > 0 ? `▲ +${diff.toFixed(1).replace(".0", "")}` : diff < 0 ? `▼ ${diff.toFixed(1).replace(".0", "")}` : "—"}
                       </span>

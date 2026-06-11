@@ -6,7 +6,12 @@ export default function VerticalBadge({ vertical }: { vertical: Vertical }) {
   return (
     <span
       className="text-[10px] font-medium px-2 py-0.5 rounded-full tracking-wide"
-      style={{ background: meta.bg, color: meta.color, border: `1px solid ${meta.color}33` }}
+      style={{
+        // Tinte del color de vertical sobre el bg-card (funciona en light y dark)
+        background: `color-mix(in srgb, ${meta.color} 16%, var(--bg-card))`,
+        color: meta.color,
+        border: `1px solid ${meta.color}33`,
+      }}
     >
       {meta.label}
     </span>

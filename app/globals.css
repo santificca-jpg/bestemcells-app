@@ -3,21 +3,57 @@
 @tailwind utilities;
 
 :root {
-  /* Paleta de marca ERA Longevity */
-  --era-navy: #2c3a5b; /* Dark Navy — anchor */
+  /* Paleta de marca ERA Longevity (modo claro) */
+  --era-navy: #2c3a5b;       /* Dark Navy — anchor */
   --era-navy-deep: #232e49;
-  --era-cyan: #3e4095; /* Blue Cyan — primary */
-  --era-gold: #d2ae6d; /* Gold — accent */
-  --era-milky: #f9f6eb; /* Light */
+  --era-cyan: #3e4095;       /* Blue Cyan — primary */
+  --era-gold: #d2ae6d;       /* Gold — accent */
+  --era-milky: #f9f6eb;      /* Light */
 
   /* Colores funcionales (señales discretas, no de marca) */
   --signal-up: #2e8b6b;
   --signal-down: #c2554e;
+
+  /* Tokens de UI (cambian en dark) */
+  --bg-app: #f9f6eb;             /* fondo general */
+  --bg-card: #ffffff;            /* fondo de tarjetas */
+  --bg-card-hover: #fbfaf3;
+  --border-soft: rgba(44, 58, 91, 0.06);
+  --border-medium: rgba(44, 58, 91, 0.12);
+  --text-primary: #2c3a5b;
+  --text-secondary: rgba(44, 58, 91, 0.70);
+  --text-muted: rgba(44, 58, 91, 0.45);
+  --chart-axis: #8a93a8;
+  --chart-grid: #e4e1d6;
+  --chart-tooltip-bg: #ffffff;
+  --chart-tooltip-border: rgba(44, 58, 91, 0.10);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    /* Tokens en dark: respetando paleta brand (navy + gold) sobre superficies oscuras */
+    --bg-app: #15192A;             /* navy más profundo aún */
+    --bg-card: #1E2542;            /* superficie de tarjetas */
+    --bg-card-hover: #232E49;      /* hover sobre tarjeta = navy-deep */
+    --border-soft: rgba(255, 255, 255, 0.06);
+    --border-medium: rgba(255, 255, 255, 0.12);
+    --text-primary: #ECECF1;
+    --text-secondary: rgba(236, 236, 241, 0.72);
+    --text-muted: rgba(236, 236, 241, 0.48);
+    --chart-axis: #8892AC;
+    --chart-grid: rgba(255, 255, 255, 0.08);
+    --chart-tooltip-bg: #1E2542;
+    --chart-tooltip-border: rgba(255, 255, 255, 0.10);
+
+    /* Funcionales: subimos saturación para que destaquen sobre fondo oscuro */
+    --signal-up: #4FB58D;
+    --signal-down: #E37B73;
+  }
 }
 
 body {
-  background: var(--era-milky);
-  color: var(--era-navy);
+  background: var(--bg-app);
+  color: var(--text-primary);
   font-family: var(--font-body), "Roboto", sans-serif;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
