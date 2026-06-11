@@ -17,16 +17,17 @@ const CYAN = "#3E4095";
 
 const tooltipStyle = {
   borderRadius: 10,
-  border: "1px solid rgba(44,58,91,0.10)",
-  boxShadow: "0 4px 16px rgba(44,58,91,0.10)",
+  background: "var(--chart-tooltip-bg)",
+  border: "1px solid var(--chart-tooltip-border)",
+  boxShadow: "0 4px 16px rgba(0,0,0,0.18)",
   fontSize: 12,
   fontFamily: "var(--font-body), Roboto, sans-serif",
-  color: NAVY,
+  color: "var(--text-primary)",
 };
 
 function CardTitle({ children }: { children: React.ReactNode }) {
   return (
-    <div className="text-[11px] font-medium text-navy/50 uppercase tracking-[0.12em] mb-4">
+    <div className="text-[11px] font-medium text-[color:var(--text-muted)] uppercase tracking-[0.12em] mb-4">
       {children}
     </div>
   );
@@ -35,8 +36,8 @@ function CardTitle({ children }: { children: React.ReactNode }) {
 export default function DashboardCharts({ turnos_por_dia, distribucion }: Props) {
   return (
     <div className="grid grid-cols-1 md:grid-cols-3 gap-3 md:gap-4">
-      <div className="md:col-span-2 bg-white rounded-xl p-4 md:p-5 shadow-card border border-navy/5">
-        <CardTitle>Turnos por día</CardTitle>
+      <div className="md:col-span-2 bg-[color:var(--bg-card)] rounded-xl p-4 md:p-5 shadow-card border border-[color:var(--border-soft)]">
+        <CardTitle>Visitas por día</CardTitle>
         <ResponsiveContainer width="100%" height={170}>
           <BarChart data={turnos_por_dia} barCategoryGap="35%">
             <defs>
@@ -47,27 +48,27 @@ export default function DashboardCharts({ turnos_por_dia, distribucion }: Props)
             </defs>
             <XAxis
               dataKey="dia"
-              tick={{ fontSize: 11, fill: "#8A93A8" }}
-              axisLine={{ stroke: "#E4E1D6" }}
+              tick={{ fontSize: 11, fill: "var(--chart-axis)" }}
+              axisLine={{ stroke: "var(--chart-grid)" }}
               tickLine={false}
             />
             <YAxis
-              tick={{ fontSize: 11, fill: "#8A93A8" }}
+              tick={{ fontSize: 11, fill: "var(--chart-axis)" }}
               axisLine={false}
               tickLine={false}
               width={28}
             />
             <Tooltip
-              cursor={{ fill: "rgba(62,64,149,0.05)" }}
+              cursor={{ fill: "rgba(62,64,149,0.08)" }}
               contentStyle={tooltipStyle}
-              formatter={(v) => [`${v} turnos`, ""]}
+              formatter={(v) => [`${v} visitas`, ""]}
             />
             <Bar dataKey="cantidad" fill="url(#eraBar)" radius={[5, 5, 0, 0]} />
           </BarChart>
         </ResponsiveContainer>
       </div>
 
-      <div className="bg-white rounded-xl p-4 md:p-5 shadow-card border border-navy/5">
+      <div className="bg-[color:var(--bg-card)] rounded-xl p-4 md:p-5 shadow-card border border-[color:var(--border-soft)]">
         <CardTitle>Verticales</CardTitle>
         <ResponsiveContainer width="100%" height={190}>
           <PieChart>

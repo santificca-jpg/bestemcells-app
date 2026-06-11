@@ -1,5 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import type { Vertical } from "./types";
+import { decodeEntities } from "./sanitize";
 
 const VALID_VERTICALS = new Set<string>([
   "longevidad", "dolor", "sueroterapia", "estudios", "procedimientos",
@@ -161,14 +162,23 @@ function computeDistribucion(rows: RawApptMin[]) {
 
 function computeTurnosPorDia(rows: RawAppt[], monday: Date) {
   const dias = ["Lun", "Mar", "Mié", "Jue", "Vie"];
+  // Total de visitas: paciente + día (mismo criterio que visitas únicas).
+  // Un paciente con varios turnos en el mismo día cuenta una sola vez.
+  // Se excluyen técnicos de sueroterapia, canceladas y no-shows.
+  const activos = rows.filter((r) =>
+    r.estado !== "cancelada" &&
+    r.estado !== "no-show" &&
+    !esTecnico(r.era_professionals?.nombre ?? "")
+  );
   return dias.map((dia, i) => {
     const fecha = addDays(monday, i);
     const fechaStr = `${String(fecha.getDate()).padStart(2, "0")}/${String(fecha.getMonth() + 1).padStart(2, "0")}`;
-    const cantidad = rows.filter((r) => {
-      const d = new Date(r.fecha_hora);
-      return d.getDay() === i + 1;
-    }).length;
-    return { dia, fecha: fechaStr, cantidad };
+    const visitasSet = new Set(
+      activos
+        .filter((r) => new Date(r.fecha_hora).getDay() === i + 1)
+        .map((r) => r.paciente_id)
+    );
+    return { dia, fecha: fechaStr, cantidad: visitasSet.size };
   });
 }
 
@@ -327,8 +337,8 @@ export async function getDashboardData(): Promise<DashboardData | null> {
         servicio: SERVICIO_LABEL[vertical],
         vertical,
         es_primera_vez: true,
-        motivo_consulta: r.motivo_consulta ?? null,
-        observaciones: r.observaciones ?? null,
+        motivo_consulta: decodeEntities(r.motivo_consulta ?? null),
+        observaciones: decodeEntities(r.observaciones ?? null),
       };
     });
 
